@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ use_vision = st.checkbox("Si el PDF no tiene texto, intentar con visión (Qwen2.
 uploaded_pdf = st.file_uploader("Subir PDF (nativo)", type=["pdf"])
 if uploaded_pdf is not None:
     pdf_bytes = uploaded_pdf.read()
+    st.session_state["doc_id"] = hashlib.sha256(pdf_bytes).hexdigest()
     extracted = extract_text_from_pdf_bytes(pdf_bytes)
     st.write(f"Páginas detectadas: {extracted['pages']}")
     st.session_state["input_pages"] = extracted.get("page_texts")
@@ -100,7 +102,12 @@ if run_clicked:
     try:
         with st.spinner("Ejecutando extracción con LLM local (Ollama)..."):
             pages = st.session_state.get("input_pages")
-            result: dict[str, Any] = run_pipeline(text, pages=pages if isinstance(pages, list) else None)
+            doc_id = st.session_state.get("doc_id")
+            result: dict[str, Any] = run_pipeline(
+                text,
+                pages=pages if isinstance(pages, list) else None,
+                doc_id=doc_id if isinstance(doc_id, str) else None,
+            )
     except Exception as e:
         st.error("Falló la extracción: el modelo devolvió una respuesta no válida o hubo un problema de conexión.")
         st.exception(e)

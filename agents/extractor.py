@@ -129,7 +129,12 @@ def _safe_json_parse(text: str) -> Any:
         raise
 
 
-def extract_from_text(text: str, schema: DocSchema, pages: list[str] | None = None) -> dict[str, Any]:
+def extract_from_text(
+    text: str,
+    schema: DocSchema,
+    pages: list[str] | None = None,
+    doc_id: str | None = None,
+) -> dict[str, Any]:
     llm = get_text_llm()
     prompt = (
         f"{_schema_instructions(schema)}\n\n"
@@ -181,7 +186,7 @@ def extract_from_text(text: str, schema: DocSchema, pages: list[str] | None = No
         q = f"{label}"
         if isinstance(value, str) and value.strip():
             q = f"{label}: {value}"
-        hits = retrieve_best_evidence(q, chunks, top_k=1)
+        hits = retrieve_best_evidence(q, chunks, top_k=1, doc_id=doc_id)
         if hits:
             hit = hits[0]
             meta = hit.get("metadata") or {}

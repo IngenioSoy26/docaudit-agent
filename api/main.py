@@ -1,5 +1,6 @@
 from typing import Any
 
+import hashlib
 from fastapi import FastAPI, File, UploadFile
 from pydantic import BaseModel, Field
 
@@ -37,6 +38,7 @@ def extract(req: ExtractRequest) -> ExtractResponse:
 @app.post("/extract_pdf", response_model=ExtractResponse)
 async def extract_pdf(file: UploadFile = File(...), mode: str = "auto") -> ExtractResponse:
     pdf_bytes = await file.read()
+    doc_id = hashlib.sha256(pdf_bytes).hexdigest()
     extracted = extract_text_from_pdf_bytes(pdf_bytes)
     text = extracted["text"]
     pages = extracted.get("page_texts")
@@ -44,5 +46,5 @@ async def extract_pdf(file: UploadFile = File(...), mode: str = "auto") -> Extra
         extracted_v = extract_text_from_scanned_pdf_bytes(pdf_bytes)
         text = extracted_v["text"]
         pages = extracted_v.get("page_texts")
-    result = run_pipeline(text, pages=pages if isinstance(pages, list) else None)
+    result = run_pipeline(text, pages=pages if isinstance(pages, list) else None, doc_id=doc_id)
     return ExtractResponse(**result)

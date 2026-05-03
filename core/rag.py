@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.ollama_http import embed_texts
+from core.settings import settings
 
 
 @dataclass(frozen=True)
@@ -52,10 +53,26 @@ def build_chunks_from_text(text: str) -> list[RagChunk]:
     return chunks
 
 
+def _sanitize_collection_name(name: str) -> str:
+    cleaned = []
+    for ch in name:
+        if ch.isalnum() or ch in {"_", "-"}:
+            cleaned.append(ch)
+    out = "".join(cleaned).lower()
+    if not out:
+        out = "doc"
+    if len(out) > 48:
+        out = out[:48]
+    if not out[0].isalpha():
+        out = "d_" + out
+    return out
+
+
 def retrieve_best_evidence(
     query: str,
     chunks: list[RagChunk],
     top_k: int = 3,
+    doc_id: str | None = None,
 ) -> list[dict[str, Any]]:
     q = (query or "").strip()
     if not q or not chunks:
@@ -70,16 +87,28 @@ def retrieve_best_evidence(
         def __call__(self, input: list[str]) -> list[list[float]]:
             return embed_texts(input)
 
-    client = chromadb.Client()
-    collection = client.get_or_create_collection(
-        name="docaudit_ephemeral",
-        embedding_function=_OllamaEmbeddingFn(),
-    )
-    collection.add(
-        ids=[c.id for c in chunks],
-        documents=[c.text for c in chunks],
-        metadatas=[c.metadata for c in chunks],
-    )
+    embedding_fn = _OllamaEmbeddingFn()
+    if doc_id:
+        client = chromadb.PersistentClient(path=settings.rag_persist_dir)
+        name = _sanitize_collection_name(f"doc_{doc_id}")
+        collection = client.get_or_create_collection(name=name, embedding_function=embedding_fn)
+        try:
+            existing = collection.count()
+        except Exception:
+            existing = 0
+        if existing == 0:
+            ids = [f"{doc_id}_{c.id}" for c in chunks]
+            metadatas = [{**(c.metadata or {}), "doc_id": doc_id} for c in chunks]
+            collection.upsert(ids=ids, documents=[c.text for c in chunks], metadatas=metadatas)
+    else:
+        client = chromadb.Client()
+        collection = client.get_or_create_collection(name="docaudit_ephemeral", embedding_function=embedding_fn)
+        collection.upsert(
+            ids=[c.id for c in chunks],
+            documents=[c.text for c in chunks],
+            metadatas=[c.metadata for c in chunks],
+        )
+
     res = collection.query(query_texts=[q], n_results=max(1, top_k))
     ids = (res.get("ids") or [[]])[0]
     docs = (res.get("documents") or [[]])[0]
