@@ -21,6 +21,7 @@ class PipelineState(TypedDict, total=False):
     extracted_raw: dict[str, Any]
     normalization: dict[str, Any]
     extracted: dict[str, Any]
+    field_details: dict[str, Any]
     validation: dict[str, Any]
     report: dict[str, Any]
 
@@ -40,11 +41,19 @@ def _build_graph() -> Any:
         schema_path = schemas_dir / f"{schema_name}.yaml"
         schema = load_schema(schema_path)
         extracted_raw = extract_from_text(state["text"], schema)
-        return {"schema": schema, "extracted_raw": extracted_raw}
+        if isinstance(extracted_raw, dict) and "fields" in extracted_raw and "details" in extracted_raw:
+            extracted_fields = extracted_raw.get("fields") or {}
+            return {
+                "schema": schema,
+                "extracted_raw": extracted_raw,
+                "extracted": extracted_fields,
+                "field_details": extracted_raw.get("details") or {},
+            }
+        return {"schema": schema, "extracted_raw": extracted_raw, "extracted": extracted_raw}
 
     def node_normalize(state: PipelineState) -> PipelineState:
         schema = state["schema"]
-        normalization = normalize_extracted(state["extracted_raw"], schema)
+        normalization = normalize_extracted(state["extracted"], schema)
         return {"normalization": normalization, "extracted": normalization["normalized"]}
 
     def node_validate(state: PipelineState) -> PipelineState:
@@ -54,7 +63,12 @@ def _build_graph() -> Any:
 
     def node_audit(state: PipelineState) -> PipelineState:
         schema = state["schema"]
-        report = audit_document(schema, state["extracted"], state["validation"])
+        report = audit_document(
+            schema,
+            state["extracted"],
+            state["validation"],
+            field_details=state.get("field_details") or {},
+        )
         return {"report": report}
 
     graph.add_node("classifier", node_classify)

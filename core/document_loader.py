@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import tempfile
 from typing import Any
 
 from pypdf import PdfReader
@@ -9,7 +10,31 @@ from core.ollama_http import chat_with_images
 
 
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
-    reader = PdfReader(io.BytesIO(pdf_bytes))
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        pages = len(reader.pages)
+    except Exception:
+        reader = None
+        pages = 0
+
+    try:
+        from docling.document_converter import DocumentConverter  # type: ignore
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as f:
+            f.write(pdf_bytes)
+            f.flush()
+            converter = DocumentConverter()
+            result = converter.convert(f.name)
+            md = result.document.export_to_markdown()
+        text = (md or "").strip()
+        if text:
+            return {"text": text, "pages": pages, "method": "docling"}
+    except Exception:
+        pass
+
+    if reader is None:
+        return {"text": "", "pages": 0, "method": "pypdf"}
+
     texts: list[str] = []
     for page in reader.pages:
         page_text = page.extract_text() or ""
@@ -17,7 +42,7 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
         if page_text:
             texts.append(page_text)
     text = "\n\n".join(texts).strip()
-    return {"text": text, "pages": len(reader.pages)}
+    return {"text": text, "pages": pages, "method": "pypdf"}
 
 
 def extract_images_from_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:

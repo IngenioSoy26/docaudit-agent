@@ -1,8 +1,28 @@
 from __future__ import annotations
 
+import re
+
+from core.llm import get_classifier_llm
 
 def classify_text(text: str) -> str:
     t = text.lower()
+
+    schemas = ["credito_hipotecario", "auditoria_fiscal", "kyc_onboarding"]
+    try:
+        llm = get_classifier_llm()
+        prompt = (
+            "Clasifica el texto en uno de estos casos de uso. Devuelve SOLO el id exacto.\n"
+            f"Opciones: {', '.join(schemas)}\n\n"
+            f"Texto:\n{text}\n"
+        )
+        resp = llm.invoke(prompt)
+        raw = resp.content if isinstance(resp.content, str) else str(resp.content)
+        raw = raw.strip().lower()
+        raw = re.sub(r"[^a-z0-9_]+", "", raw)
+        if raw in schemas:
+            return raw
+    except Exception:
+        pass
 
     kyc_keywords = [
         "kyc",

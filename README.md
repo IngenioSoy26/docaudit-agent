@@ -7,7 +7,7 @@ Sistema multi-agente para la auditoría y extracción inteligente de documentos 
 Este repositorio ya incluye una plataforma funcional que:
 
 - Orquesta 5 agentes en un grafo LangGraph: clasificador → extractor → normalizador → validador → auditor.
-- Extrae campos con LLM local (Ollama) devolviendo JSON estructurado según un esquema YAML.
+- Extrae campos con LLM local (Ollama) devolviendo estructura por campo (valor, confianza, evidencia, página).
 - Soporta PDFs nativos (texto embebido) y PDFs escaneados (visión con Qwen2.5-VL).
 - Normaliza y valida contra reglas declarativas (required, min/max, regex, enum).
 - Genera un informe de auditoría (JSON + Markdown) con score y evaluación de reglas de decisión.
@@ -87,12 +87,14 @@ Modelos esperados:
 
 - `qwen2.5vl:7b`
 - `mistral:7b-instruct`
+- `llama3.2:3b` (clasificación)
 
 Si falta alguno:
 
 ```powershell
 ollama pull qwen2.5vl:7b
 ollama pull mistral:7b-instruct
+ollama pull llama3.2:3b
 ```
 
 ## Ejecutar pruebas
@@ -174,6 +176,8 @@ La UI permite subir un PDF “nativo” (con texto seleccionable). Al subirlo, s
 
 Si el PDF es escaneado y no tiene texto embebido, se intenta la ruta de visión con `qwen2.5vl:7b` (Ollama) para transcribir imágenes incrustadas.
 
+Para PDFs nativos, si tienes instalada la librería `docling`, el sistema intenta usarla primero (layout → markdown). Si no está instalada, hace fallback a PyPDF.
+
 ## Componentes (mapa rápido)
 
 - Clasificador: [classifier.py](agents/classifier.py)
@@ -192,7 +196,7 @@ Si el PDF es escaneado y no tiene texto embebido, se intenta la ruta de visión 
 1) Crear y activar `.venv`.
 2) Instalar dependencias (`requirements.txt`).
 3) Instalar y abrir Ollama.
-4) Descargar modelos (`qwen2.5vl:7b` y `mistral:7b-instruct`).
+4) Descargar modelos (`qwen2.5vl:7b`, `mistral:7b-instruct`, `llama3.2:3b`).
 5) Ejecutar pruebas (`pytest`).
 6) Levantar UI (`streamlit run ui/app.py`) o API (`uvicorn api.main:app --reload`).
 7) Probar:
@@ -206,3 +210,11 @@ Si el PDF es escaneado y no tiene texto embebido, se intenta la ruta de visión 
 - `&&` no funciona en tu PowerShell: usa `;` para encadenar comandos.
 - Error “could not connect to running instance” en Ollama: abre la app de Ollama y reintenta `ollama list`.
 - Modelo de visión: el tag correcto es `qwen2.5vl:7b` (sin guion entre 5 y vl).
+
+## Stack recomendado (opcional)
+
+Estas librerías no son obligatorias para correr el MVP, pero alinean el proyecto con la propuesta técnica:
+
+```powershell
+.\.venv\Scripts\python -m pip install docling marker-pdf chromadb ollama
+```

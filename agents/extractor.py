@@ -11,23 +11,27 @@ from core.schema_models import DocSchema
 
 def _schema_instructions(schema: DocSchema) -> str:
     lines: list[str] = []
-    lines.append("Devuelve SOLO un objeto JSON válido (RFC 8259).")
-    lines.append("Usa comillas dobles para claves y strings. No uses comas finales.")
+    lines.append("Devuelve SOLO JSON válido (RFC 8259).")
+    lines.append("Usa comillas dobles para claves y strings. No uses comas finales ni comentarios.")
     lines.append("No incluyas comentarios (// o /* */) ni texto fuera del JSON.")
-    lines.append("El JSON debe contener exactamente estas claves:")
+    lines.append("Devuelve una lista JSON de objetos CampoExtraido, uno por campo del esquema.")
+    lines.append("CampoExtraido = {")
+    lines.append('  "nombre": string,')
+    lines.append('  "valor": string|number|boolean|null,')
+    lines.append('  "confianza": number (0.0-1.0),')
+    lines.append('  "evidencia_textual": string,')
+    lines.append('  "pagina": integer')
+    lines.append("}")
+    lines.append("Los nombres deben coincidir exactamente con estos campos:")
     for f in schema.fields:
         lines.append(f'- "{f.name}" ({f.type}) requerido={f.required}')
     lines.append("Si no encuentras un valor, usa null.")
+    lines.append("Si no puedes determinar la página, usa 1.")
     return "\n".join(lines)
 
 
-def _safe_json_loads(text: str) -> dict[str, Any]:
+def _safe_json_parse(text: str) -> Any:
     raw = (text or "").strip()
-
-    def _ensure_dict(value: Any) -> dict[str, Any]:
-        if isinstance(value, dict):
-            return {str(k): v for k, v in value.items()}
-        raise json.JSONDecodeError("Expected JSON object", raw, 0)
 
     def _strip_js_style_comments(s: str) -> str:
         out: list[str] = []
@@ -80,19 +84,25 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
             cur = re.sub(r",(\s*[}\]])", r"\1", cur)
         return cur
 
-    fence = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw, flags=re.IGNORECASE)
+    fence = re.search(
+        r"```(?:json)?\s*([\s\S]*?)\s*```", raw, flags=re.IGNORECASE
+    )
     if fence:
         raw = fence.group(1).strip()
     raw = _strip_js_style_comments(raw).strip()
 
     try:
-        return _ensure_dict(json.loads(raw))
+        return json.loads(raw)
     except json.JSONDecodeError:
-        start = raw.find("{")
-        end = raw.rfind("}")
+        obj_start = raw.find("{")
+        obj_end = raw.rfind("}")
+        arr_start = raw.find("[")
+        arr_end = raw.rfind("]")
         candidates: list[str] = []
-        if start != -1 and end != -1 and end > start:
-            candidates.append(raw[start : end + 1].strip())
+        if arr_start != -1 and arr_end != -1 and arr_end > arr_start:
+            candidates.append(raw[arr_start : arr_end + 1].strip())
+        if obj_start != -1 and obj_end != -1 and obj_end > obj_start:
+            candidates.append(raw[obj_start : obj_end + 1].strip())
         candidates.append(raw)
 
         last_err: Exception | None = None
@@ -100,7 +110,7 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
             cand = _strip_js_style_comments(cand).strip()
             for attempt in (cand, _remove_trailing_commas(cand)):
                 try:
-                    return _ensure_dict(json.loads(attempt))
+                    return json.loads(attempt)
                 except Exception as e:
                     last_err = e
 
@@ -109,8 +119,7 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
             py_like = re.sub(r"\btrue\b", "True", py_like, flags=re.IGNORECASE)
             py_like = re.sub(r"\bfalse\b", "False", py_like, flags=re.IGNORECASE)
             try:
-                value = ast.literal_eval(py_like)
-                return _ensure_dict(value)
+                return ast.literal_eval(py_like)
             except Exception as e:
                 last_err = e
 
@@ -128,10 +137,39 @@ def extract_from_text(text: str, schema: DocSchema) -> dict[str, Any]:
     )
     response = llm.invoke(prompt)
     raw = response.content if isinstance(response.content, str) else str(response.content)
-    data = _safe_json_loads(raw)
-
     allowed = {f.name for f in schema.fields}
-    cleaned: dict[str, Any] = {k: v for k, v in data.items() if k in allowed}
+    parsed = _safe_json_parse(raw)
+
+    if isinstance(parsed, dict):
+        cleaned: dict[str, Any] = {k: v for k, v in parsed.items() if k in allowed}
+        for key in allowed:
+            cleaned.setdefault(key, None)
+        return cleaned
+
+    fields: dict[str, Any] = {}
+    details: dict[str, Any] = {}
+    if isinstance(parsed, list):
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("nombre")
+            if not isinstance(name, str) or name not in allowed:
+                continue
+            value = item.get("valor")
+            fields[name] = value
+            details[name] = {
+                "nombre": name,
+                "valor": value,
+                "confianza": item.get("confianza"),
+                "evidencia_textual": item.get("evidencia_textual"),
+                "pagina": item.get("pagina"),
+            }
+
     for key in allowed:
-        cleaned.setdefault(key, None)
-    return cleaned
+        fields.setdefault(key, None)
+        details.setdefault(
+            key,
+            {"nombre": key, "valor": fields[key], "confianza": None, "evidencia_textual": "", "pagina": 1},
+        )
+
+    return {"fields": fields, "details": details}

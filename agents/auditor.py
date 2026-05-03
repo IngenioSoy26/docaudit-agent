@@ -152,20 +152,40 @@ def _evaluate_one_rule(rule: DecisionRule, context: dict[str, Any]) -> RuleResul
     )
 
 
-def _compute_score(extracted: dict[str, Any], validation: dict[str, Any], total_fields: int) -> float:
+def _compute_score(
+    extracted: dict[str, Any],
+    validation: dict[str, Any],
+    total_fields: int,
+    avg_confidence: float | None,
+) -> float:
     filled = sum(1 for v in extracted.values() if not _is_empty(v))
     completeness = (filled / total_fields) if total_fields else 0.0
     valid = bool(validation.get("valid"))
-    score = 0.6 * completeness + 0.4 * (1.0 if valid else 0.0)
+    conf = avg_confidence if isinstance(avg_confidence, (int, float)) else None
+    if conf is None:
+        score = 0.6 * completeness + 0.4 * (1.0 if valid else 0.0)
+    else:
+        score = 0.4 * completeness + 0.3 * (1.0 if valid else 0.0) + 0.3 * float(conf)
     return max(0.0, min(1.0, score))
 
 
 def audit_document(
-    schema: DocSchema, extracted: dict[str, Any], validation: dict[str, Any]
+    schema: DocSchema,
+    extracted: dict[str, Any],
+    validation: dict[str, Any],
+    field_details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     rule_results = _evaluate_decision_rules(schema, extracted)
     total_fields = len(schema.fields)
-    score = _compute_score(extracted, validation, total_fields)
+    details = field_details or {}
+    confidences: list[float] = []
+    for v in details.values():
+        if isinstance(v, dict):
+            c = v.get("confianza")
+            if isinstance(c, (int, float)):
+                confidences.append(float(c))
+    avg_confidence = (sum(confidences) / len(confidences)) if confidences else None
+    score = _compute_score(extracted, validation, total_fields, avg_confidence)
 
     rules_json = [
         {
@@ -182,9 +202,11 @@ def audit_document(
     report_json = {
         "schema": {"name": schema.name, "version": schema.version},
         "score_confianza": score,
+        "confianza_media_campos": avg_confidence,
         "valid": bool(validation.get("valid")),
         "issues": validation.get("issues", []),
         "decision_rules": rules_json,
+        "campos": details,
     }
 
     failed_critical = [
