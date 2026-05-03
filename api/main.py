@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import FastAPI, File, UploadFile
 from pydantic import BaseModel, Field
 
-from core.document_loader import extract_text_from_pdf_bytes
+from core.document_loader import extract_text_from_pdf_bytes, extract_text_from_scanned_pdf_bytes
 from core.orchestrator import run_pipeline
 
 
@@ -34,8 +34,12 @@ def extract(req: ExtractRequest) -> ExtractResponse:
 
 
 @app.post("/extract_pdf", response_model=ExtractResponse)
-async def extract_pdf(file: UploadFile = File(...)) -> ExtractResponse:
+async def extract_pdf(file: UploadFile = File(...), mode: str = "auto") -> ExtractResponse:
     pdf_bytes = await file.read()
     extracted = extract_text_from_pdf_bytes(pdf_bytes)
-    result = run_pipeline(extracted["text"])
+    text = extracted["text"]
+    if mode in {"auto", "vision"} and not text:
+        extracted_v = extract_text_from_scanned_pdf_bytes(pdf_bytes)
+        text = extracted_v["text"]
+    result = run_pipeline(text)
     return ExtractResponse(**result)

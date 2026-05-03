@@ -11,7 +11,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.document_loader import extract_text_from_pdf_bytes  # noqa: E402
+try:  # noqa: E402
+    from core.document_loader import extract_text_from_pdf_bytes, extract_text_from_scanned_pdf_bytes
+except ImportError:  # noqa: E402
+    from core.document_loader import extract_text_from_pdf_bytes
+
+    extract_text_from_scanned_pdf_bytes = None
 from core.orchestrator import run_pipeline  # noqa: E402
 from core.schema_loader import load_schema  # noqa: E402
 from core.normalizer import normalize_extracted  # noqa: E402
@@ -22,6 +27,8 @@ st.title("DocAudit Agent")
 
 st.write("Pega texto (o el contenido extraído de un documento) y ejecuta el pipeline: extraer → normalizar → validar.")
 
+use_vision = st.checkbox("Si el PDF no tiene texto, intentar con visión (Qwen2.5-VL)", value=True)
+
 uploaded_pdf = st.file_uploader("Subir PDF (nativo)", type=["pdf"])
 if uploaded_pdf is not None:
     pdf_bytes = uploaded_pdf.read()
@@ -30,7 +37,22 @@ if uploaded_pdf is not None:
     if extracted["text"]:
         st.session_state["input_text"] = extracted["text"]
     else:
-        st.warning("No se pudo extraer texto. Si el PDF es escaneado, necesitaremos la ruta de OCR/VL.")
+        if use_vision:
+            if extract_text_from_scanned_pdf_bytes is None:
+                st.error(
+                    "No está disponible la función de visión. Detén y vuelve a iniciar Streamlit "
+                    "para recargar los módulos, y verifica que tu entorno tenga el código actualizado."
+                )
+            else:
+                with st.spinner("Extrayendo texto con visión (Qwen2.5-VL)..."):
+                    extracted_v = extract_text_from_scanned_pdf_bytes(pdf_bytes)
+                st.write(f"Imágenes detectadas: {extracted_v['images']}")
+                if extracted_v["text"]:
+                    st.session_state["input_text"] = extracted_v["text"]
+                else:
+                    st.warning("No se pudo extraer texto del PDF escaneado.")
+        else:
+            st.warning("No se pudo extraer texto. Activa la opción de visión para PDFs escaneados.")
 
 col_left, col_right = st.columns([2, 1])
 
@@ -73,8 +95,13 @@ with col_left:
 run_clicked = st.button("Ejecutar", type="primary", disabled=not text.strip())
 
 if run_clicked:
-    with st.spinner("Ejecutando extracción con LLM local (Ollama)..."):
-        result: dict[str, Any] = run_pipeline(text)
+    try:
+        with st.spinner("Ejecutando extracción con LLM local (Ollama)..."):
+            result: dict[str, Any] = run_pipeline(text)
+    except Exception as e:
+        st.error("Falló la extracción: el modelo devolvió una respuesta no válida o hubo un problema de conexión.")
+        st.exception(e)
+        st.stop()
 
     st.subheader("Resultado")
     tab_extracted, tab_normalization, tab_validation = st.tabs(
