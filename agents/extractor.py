@@ -7,6 +7,7 @@ from typing import Any
 
 from core.llm import get_text_llm
 from core.schema_models import DocSchema
+from core.rag import build_chunks_from_pages, build_chunks_from_text, retrieve_best_evidence
 
 
 def _schema_instructions(schema: DocSchema) -> str:
@@ -128,7 +129,7 @@ def _safe_json_parse(text: str) -> Any:
         raise
 
 
-def extract_from_text(text: str, schema: DocSchema) -> dict[str, Any]:
+def extract_from_text(text: str, schema: DocSchema, pages: list[str] | None = None) -> dict[str, Any]:
     llm = get_text_llm()
     prompt = (
         f"{_schema_instructions(schema)}\n\n"
@@ -171,5 +172,24 @@ def extract_from_text(text: str, schema: DocSchema) -> dict[str, Any]:
             key,
             {"nombre": key, "valor": fields[key], "confianza": None, "evidencia_textual": "", "pagina": 1},
         )
+
+    chunks = build_chunks_from_pages(pages) if pages else build_chunks_from_text(text)
+    for f in schema.fields:
+        name = f.name
+        label = f.description or name
+        value = fields.get(name)
+        q = f"{label}"
+        if isinstance(value, str) and value.strip():
+            q = f"{label}: {value}"
+        hits = retrieve_best_evidence(q, chunks, top_k=1)
+        if hits:
+            hit = hits[0]
+            meta = hit.get("metadata") or {}
+            if details.get(name) is None or not isinstance(details.get(name), dict):
+                details[name] = {"nombre": name, "valor": value, "confianza": None, "evidencia_textual": "", "pagina": 1}
+            details[name]["evidencia_textual"] = hit.get("text") or details[name].get("evidencia_textual") or ""
+            page = meta.get("page")
+            if isinstance(page, int) and page > 0:
+                details[name]["pagina"] = page
 
     return {"fields": fields, "details": details}

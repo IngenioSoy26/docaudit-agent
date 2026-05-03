@@ -88,6 +88,7 @@ Modelos esperados:
 - `qwen2.5vl:7b`
 - `mistral:7b-instruct`
 - `llama3.2:3b` (clasificación)
+- `nomic-embed-text` (embeddings para ChromaDB)
 
 Si falta alguno:
 
@@ -95,6 +96,7 @@ Si falta alguno:
 ollama pull qwen2.5vl:7b
 ollama pull mistral:7b-instruct
 ollama pull llama3.2:3b
+ollama pull nomic-embed-text
 ```
 
 ## Ejecutar pruebas

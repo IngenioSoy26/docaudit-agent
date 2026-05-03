@@ -39,8 +39,10 @@ async def extract_pdf(file: UploadFile = File(...), mode: str = "auto") -> Extra
     pdf_bytes = await file.read()
     extracted = extract_text_from_pdf_bytes(pdf_bytes)
     text = extracted["text"]
+    pages = extracted.get("page_texts")
     if mode in {"auto", "vision"} and not text:
         extracted_v = extract_text_from_scanned_pdf_bytes(pdf_bytes)
         text = extracted_v["text"]
-    result = run_pipeline(text)
+        pages = extracted_v.get("page_texts")
+    result = run_pipeline(text, pages=pages if isinstance(pages, list) else None)
     return ExtractResponse(**result)

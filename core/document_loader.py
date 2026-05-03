@@ -28,7 +28,7 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
             md = result.document.export_to_markdown()
         text = (md or "").strip()
         if text:
-            return {"text": text, "pages": pages, "method": "docling"}
+            return {"text": text, "pages": pages, "page_texts": [text], "method": "docling"}
     except Exception:
         pass
 
@@ -36,13 +36,15 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
         return {"text": "", "pages": 0, "method": "pypdf"}
 
     texts: list[str] = []
+    page_texts: list[str] = []
     for page in reader.pages:
         page_text = page.extract_text() or ""
         page_text = page_text.strip()
+        page_texts.append(page_text)
         if page_text:
             texts.append(page_text)
     text = "\n\n".join(texts).strip()
-    return {"text": text, "pages": pages, "method": "pypdf"}
+    return {"text": text, "pages": pages, "page_texts": page_texts, "method": "pypdf"}
 
 
 def extract_images_from_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
@@ -76,10 +78,19 @@ def extract_text_from_scanned_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
     )
 
     texts: list[str] = []
+    page_texts: list[str] = [""] * pages
     for img in images:
         content = chat_with_images(prompt, [img["data"]])
         content = content.strip()
         if content:
             texts.append(content)
+            page_idx = int(img.get("page") or 1) - 1
+            if 0 <= page_idx < len(page_texts):
+                page_texts[page_idx] = content
 
-    return {"text": "\n\n".join(texts).strip(), "pages": pages, "images": len(images)}
+    return {
+        "text": "\n\n".join(texts).strip(),
+        "pages": pages,
+        "page_texts": page_texts,
+        "images": len(images),
+    }

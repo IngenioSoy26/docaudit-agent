@@ -28,3 +28,35 @@ def chat_with_images(prompt: str, images: list[bytes], model: str | None = None)
     message = data.get("message") or {}
     content = message.get("content")
     return content if isinstance(content, str) else str(content)
+
+
+def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]:
+    if not texts:
+        return []
+
+    base = settings.ollama_base_url.rstrip("/")
+    chosen_model = model or settings.ollama_embedding_model
+
+    url = base + "/api/embed"
+    payload: dict[str, Any] = {"model": chosen_model, "input": texts}
+    resp = requests.post(url, json=payload, timeout=300)
+    if resp.status_code == 404:
+        url = base + "/api/embeddings"
+        embeddings: list[list[float]] = []
+        for t in texts:
+            r = requests.post(url, json={"model": chosen_model, "prompt": t}, timeout=300)
+            r.raise_for_status()
+            data = r.json()
+            emb = data.get("embedding")
+            embeddings.append(emb if isinstance(emb, list) else [])
+        return embeddings
+
+    resp.raise_for_status()
+    data = resp.json()
+    out = data.get("embeddings")
+    if isinstance(out, list):
+        return out
+    single = data.get("embedding")
+    if isinstance(single, list):
+        return [single]
+    return [[] for _ in texts]

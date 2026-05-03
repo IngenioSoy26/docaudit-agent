@@ -34,6 +34,7 @@ if uploaded_pdf is not None:
     pdf_bytes = uploaded_pdf.read()
     extracted = extract_text_from_pdf_bytes(pdf_bytes)
     st.write(f"Páginas detectadas: {extracted['pages']}")
+    st.session_state["input_pages"] = extracted.get("page_texts")
     if extracted["text"]:
         st.session_state["input_text"] = extracted["text"]
     else:
@@ -47,6 +48,7 @@ if uploaded_pdf is not None:
                 with st.spinner("Extrayendo texto con visión (Qwen2.5-VL)..."):
                     extracted_v = extract_text_from_scanned_pdf_bytes(pdf_bytes)
                 st.write(f"Imágenes detectadas: {extracted_v['images']}")
+                st.session_state["input_pages"] = extracted_v.get("page_texts")
                 if extracted_v["text"]:
                     st.session_state["input_text"] = extracted_v["text"]
                 else:
@@ -97,7 +99,8 @@ run_clicked = st.button("Ejecutar", type="primary", disabled=not text.strip())
 if run_clicked:
     try:
         with st.spinner("Ejecutando extracción con LLM local (Ollama)..."):
-            result: dict[str, Any] = run_pipeline(text)
+            pages = st.session_state.get("input_pages")
+            result: dict[str, Any] = run_pipeline(text, pages=pages if isinstance(pages, list) else None)
     except Exception as e:
         st.error("Falló la extracción: el modelo devolvió una respuesta no válida o hubo un problema de conexión.")
         st.exception(e)

@@ -34,7 +34,7 @@ def test_orchestrator_runs_without_llm(monkeypatch):
     monkeypatch.setattr(
         orchestrator,
         "extract_from_text",
-        lambda _text, _schema: {
+        lambda _text, _schema, pages=None: {
             "numero_factura": "F-001",
             "base_imponible": 100.0,
             "tipo_iva": 21.0,

@@ -15,6 +15,7 @@ from core.validator import validate_extracted
 
 class PipelineState(TypedDict, total=False):
     text: str
+    pages: list[str]
     schemas_dir: str
     schema_name: str
     schema: DocSchema
@@ -40,7 +41,7 @@ def _build_graph() -> Any:
         schema_name = state["schema_name"]
         schema_path = schemas_dir / f"{schema_name}.yaml"
         schema = load_schema(schema_path)
-        extracted_raw = extract_from_text(state["text"], schema)
+        extracted_raw = extract_from_text(state["text"], schema, pages=state.get("pages"))
         if isinstance(extracted_raw, dict) and "fields" in extracted_raw and "details" in extracted_raw:
             extracted_fields = extracted_raw.get("fields") or {}
             return {
@@ -87,9 +88,11 @@ def _build_graph() -> Any:
     return graph.compile()
 
 
-def run_pipeline(text: str, schemas_dir: str | Path = "schemas") -> dict[str, Any]:
+def run_pipeline(text: str, schemas_dir: str | Path = "schemas", pages: list[str] | None = None) -> dict[str, Any]:
     app = _build_graph()
     state: PipelineState = {"text": text, "schemas_dir": str(schemas_dir)}
+    if pages:
+        state["pages"] = pages
     final_state: PipelineState = app.invoke(state)
     schema = final_state["schema"]
     normalization = final_state["normalization"]

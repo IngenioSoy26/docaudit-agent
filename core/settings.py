@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     ollama_text_model: str = Field(default="mistral:7b-instruct")
     ollama_vision_model: str = Field(default="qwen2.5vl:7b")
     ollama_classifier_model: str = Field(default="llama3.2:3b")
+    ollama_embedding_model: str = Field(default="nomic-embed-text")
 
 
 settings = Settings()
