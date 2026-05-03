@@ -1,0 +1,45 @@
+caso_uso: kyc_onboarding
+version: "1.0"
+descripcion: >
+  Esquema para procesos KYC/onboarding. Integra documento de identidad y comprobante de domicilio,
+  con reglas mínimas de vigencia y formato.
+
+documentos:
+  - tipo: DOCUMENTO_IDENTIDAD
+    descripcion: "DNI/NIE/Pasaporte"
+    campos:
+      - nombre: tipo_documento
+        etiqueta: "Tipo de documento"
+        tipo_dato: string
+        requerido: true
+        validacion:
+          valores_permitidos: ["DNI", "NIE", "PASAPORTE"]
+      - nombre: numero_documento
+        etiqueta: "Número de documento"
+        tipo_dato: string
+        requerido: true
+      - nombre: fecha_caducidad
+        etiqueta: "Fecha de caducidad"
+        tipo_dato: date
+        requerido: true
+
+  - tipo: JUSTIFICANTE_DOMICILIO
+    descripcion: "Recibo/empadronamiento"
+    campos:
+      - nombre: codigo_postal
+        etiqueta: "Código postal"
+        tipo_dato: string
+        requerido: true
+        patron: "^[0-9]{5}$"
+
+reglas_decision:
+  - id: RK01
+    descripcion: "Documento de identidad no caducado"
+    expresion: "fecha_caducidad > fecha_actual"
+    severidad: critica
+
+informe:
+  formato: ["json", "markdown"]
+  incluir_score_confianza: true
+  nivel_detalle: resumen
+  idioma: es

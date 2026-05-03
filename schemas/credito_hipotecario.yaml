@@ -1,0 +1,57 @@
+caso_uso: credito_hipotecario
+version: "1.0"
+descripcion: >
+  Esquema para evaluación de solvencia hipotecaria. Integra IRPF, facturas recurrentes
+  y extractos bancarios, con reglas básicas de decisión.
+
+documentos:
+  - tipo: IRPF
+    descripcion: "Declaración IRPF del solicitante"
+    campos:
+      - nombre: nif_declarante
+        etiqueta: "NIF del declarante"
+        tipo_dato: string
+        requerido: true
+        patron: "^[0-9]{8}[A-Z]$"
+      - nombre: rendimientos_trabajo
+        etiqueta: "Rendimientos del trabajo"
+        tipo_dato: float
+        requerido: true
+        validacion:
+          rango_min: 0.0
+
+  - tipo: FACTURA
+    descripcion: "Factura de gasto recurrente"
+    campos:
+      - nombre: importe_total_iva
+        etiqueta: "Importe total con IVA"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+
+  - tipo: EXTRACTO_BANCARIO
+    descripcion: "Extracto bancario"
+    campos:
+      - nombre: total_gastos_mensuales
+        etiqueta: "Total gastos mensuales"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+
+reglas_decision:
+  - id: R01
+    descripcion: "Renta anual mínima"
+    expresion: "rendimientos_trabajo >= 24000"
+    severidad: critica
+  - id: R02
+    descripcion: "Ratio deuda/renta máximo 35%"
+    expresion: "total_gastos_mensuales / (rendimientos_trabajo / 12) <= 0.35"
+    severidad: advertencia
+
+informe:
+  formato: ["json", "markdown"]
+  incluir_score_confianza: true
+  nivel_detalle: resumen
+  idioma: es

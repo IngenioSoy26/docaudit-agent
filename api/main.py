@@ -20,6 +20,7 @@ class ExtractResponse(BaseModel):
     extracted: dict[str, Any]
     normalization: dict[str, Any]
     validation: dict[str, Any]
+    report: dict[str, Any]
 
 
 @app.get("/health")

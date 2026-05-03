@@ -1,0 +1,58 @@
+caso_uso: auditoria_fiscal
+version: "1.0"
+descripcion: >
+  Esquema para verificación documental en auditorías fiscales. Integra facturas y modelo 303,
+  con reglas de coherencia básicas.
+
+documentos:
+  - tipo: FACTURA
+    descripcion: "Factura emitida o recibida"
+    campos:
+      - nombre: numero_factura
+        etiqueta: "Número de factura"
+        tipo_dato: string
+        requerido: true
+      - nombre: base_imponible
+        etiqueta: "Base imponible"
+        tipo_dato: float
+        requerido: true
+        validacion:
+          rango_min: 0.0
+      - nombre: tipo_iva
+        etiqueta: "Tipo IVA (%)"
+        tipo_dato: float
+        requerido: true
+        validacion:
+          valores_permitidos: [0, 4, 10, 21]
+      - nombre: cuota_iva
+        etiqueta: "Cuota IVA"
+        tipo_dato: float
+        requerido: true
+
+  - tipo: MODELO_303
+    descripcion: "Declaración trimestral IVA (Modelo 303)"
+    campos:
+      - nombre: base_iva_devengado
+        etiqueta: "Base IVA devengado"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+      - nombre: cuota_iva_devengado
+        etiqueta: "Cuota IVA devengado"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+
+reglas_decision:
+  - id: RF01
+    descripcion: "Cuota IVA coherente con base y tipo"
+    expresion: "abs((base_imponible * (tipo_iva / 100)) - cuota_iva) <= 0.02 * max(1, cuota_iva)"
+    severidad: advertencia
+
+informe:
+  formato: ["json", "markdown"]
+  incluir_score_confianza: true
+  nivel_detalle: resumen
+  idioma: es

@@ -104,8 +104,8 @@ if run_clicked:
         st.stop()
 
     st.subheader("Resultado")
-    tab_extracted, tab_normalization, tab_validation = st.tabs(
-        ["Extracción", "Normalización", "Validación"]
+    tab_extracted, tab_normalization, tab_validation, tab_audit = st.tabs(
+        ["Extracción", "Normalización", "Validación", "Auditoría"]
     )
 
     with tab_extracted:
@@ -136,6 +136,16 @@ if run_clicked:
             st.dataframe(issues, use_container_width=True)
         else:
             st.write("Sin incidencias.")
+
+    with tab_audit:
+        report = result.get("report", {}) or {}
+        report_json = report.get("json") or {}
+        report_md = report.get("markdown") or ""
+        if report_md:
+            st.markdown(report_md)
+        if report_json:
+            st.write("Informe (JSON)")
+            st.json(report_json)
 
     st.subheader("JSON completo")
     st.code(json.dumps(result, ensure_ascii=False, indent=2), language="json")
