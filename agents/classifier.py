@@ -8,22 +8,6 @@ def classify_text(text: str) -> str:
     t = text.lower()
 
     schemas = ["credito_hipotecario", "auditoria_fiscal", "kyc_onboarding"]
-    try:
-        llm = get_classifier_llm()
-        prompt = (
-            "Clasifica el texto en uno de estos casos de uso. Devuelve SOLO el id exacto.\n"
-            f"Opciones: {', '.join(schemas)}\n\n"
-            f"Texto:\n{text}\n"
-        )
-        resp = llm.invoke(prompt)
-        raw = resp.content if isinstance(resp.content, str) else str(resp.content)
-        raw = raw.strip().lower()
-        raw = re.sub(r"[^a-z0-9_]+", "", raw)
-        if raw in schemas:
-            return raw
-    except Exception:
-        pass
-
     kyc_keywords = [
         "kyc",
         "onboarding",
@@ -61,5 +45,21 @@ def classify_text(text: str) -> str:
     ]
     if any(k in t for k in hipotecario_keywords):
         return "credito_hipotecario"
+
+    try:
+        llm = get_classifier_llm()
+        prompt = (
+            "Clasifica el texto en uno de estos casos de uso. Devuelve SOLO el id exacto.\n"
+            f"Opciones: {', '.join(schemas)}\n\n"
+            f"Texto:\n{text}\n"
+        )
+        resp = llm.invoke(prompt, stream=False)
+        raw = resp.content if isinstance(resp.content, str) else str(resp.content)
+        raw = raw.strip().lower()
+        raw = re.sub(r"[^a-z0-9_]+", "", raw)
+        if raw in schemas:
+            return raw
+    except Exception:
+        pass
 
     return "credito_hipotecario"

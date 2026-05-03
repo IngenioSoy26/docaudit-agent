@@ -19,6 +19,7 @@ class SchemaField(BaseModel):
     type: PrimitiveType
     required: bool = False
     description: str | None = None
+    document_type: str | None = None
     examples: list[Any] = Field(default_factory=list)
     rules: list[FieldRule] = Field(default_factory=list)
 

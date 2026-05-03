@@ -48,3 +48,30 @@ def test_orchestrator_runs_without_llm(monkeypatch):
     assert "report" in result
     assert "json" in result["report"]
     assert "markdown" in result["report"]
+
+
+def test_safe_json_parse_fixes_malformed_number_multiple_dots():
+    from agents.extractor import _safe_json_parse
+
+    raw = '[{"nombre":"importe","valor": 5.489.11, "confianza":0.9, "evidencia_textual":"", "pagina":1}]'
+    parsed = _safe_json_parse(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["valor"] == 5489.11
+
+
+def test_heuristic_total_gastos_mensuales_from_transferencias():
+    from agents.extractor import _heuristic_total_gastos_mensuales
+
+    text = "\n".join(
+        [
+            "22/07/2025",
+            "Transferencia enviada",
+            "423,00",
+            "4.621,73",
+            "07/07/2025",
+            "Transferencia enviada",
+            "258,21",
+            "4.363,52",
+        ]
+    )
+    assert _heuristic_total_gastos_mensuales(text) == 681.21

@@ -22,7 +22,7 @@ def chat_with_images(prompt: str, images: list[bytes], model: str | None = None)
             }
         ],
     }
-    resp = requests.post(url, json=payload, timeout=300)
+    resp = requests.post(url, json=payload, timeout=settings.ollama_timeout_s)
     resp.raise_for_status()
     data = resp.json()
     message = data.get("message") or {}
@@ -39,12 +39,12 @@ def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]
 
     url = base + "/api/embed"
     payload: dict[str, Any] = {"model": chosen_model, "input": texts}
-    resp = requests.post(url, json=payload, timeout=300)
+    resp = requests.post(url, json=payload, timeout=settings.ollama_timeout_s)
     if resp.status_code == 404:
         url = base + "/api/embeddings"
         embeddings: list[list[float]] = []
         for t in texts:
-            r = requests.post(url, json={"model": chosen_model, "prompt": t}, timeout=300)
+            r = requests.post(url, json={"model": chosen_model, "prompt": t}, timeout=settings.ollama_timeout_s)
             r.raise_for_status()
             data = r.json()
             emb = data.get("embedding")

@@ -28,6 +28,42 @@ class PipelineState(TypedDict, total=False):
     report: dict[str, Any]
 
 
+def _infer_document_type(schema: DocSchema, text: str) -> str | None:
+    if not schema.document_types:
+        return None
+    t = (text or "").lower()
+    candidates = schema.document_types
+
+    def _pick(*, triggers: list[str], type_hints: list[str]) -> str | None:
+        if not any(x in t for x in triggers):
+            return None
+        for dt in candidates:
+            low = dt.lower()
+            if any(h in low for h in type_hints):
+                return dt
+        return None
+
+    hit = _pick(
+        triggers=["iban", "saldo", "transferencia", "movimiento", "extracto bancario"],
+        type_hints=["extracto", "bancario"],
+    )
+    if hit:
+        return hit
+    hit = _pick(
+        triggers=["factura", "iva", "base imponible", "cuota"],
+        type_hints=["factura"],
+    )
+    if hit:
+        return hit
+    hit = _pick(
+        triggers=["irpf", "casilla", "declaración", "declaracion", "modelo 100"],
+        type_hints=["irpf"],
+    )
+    if hit:
+        return hit
+    return None
+
+
 @lru_cache(maxsize=8)
 def _build_graph() -> Any:
     from langgraph.graph import END, StateGraph
@@ -42,6 +78,11 @@ def _build_graph() -> Any:
         schema_name = state["schema_name"]
         schema_path = schemas_dir / f"{schema_name}.yaml"
         schema = load_schema(schema_path)
+        inferred = _infer_document_type(schema, state["text"])
+        if inferred and any(getattr(f, "document_type", None) for f in schema.fields):
+            filtered_fields = [f for f in schema.fields if f.document_type == inferred]
+            if filtered_fields:
+                schema = schema.model_copy(update={"fields": filtered_fields, "document_types": [inferred]})
         extracted_raw = extract_from_text(
             state["text"],
             schema,

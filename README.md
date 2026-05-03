@@ -11,6 +11,8 @@ Este repositorio ya incluye una plataforma funcional que:
 - Soporta PDFs nativos (texto embebido) y PDFs escaneados (visión con Qwen2.5-VL).
 - Normaliza y valida contra reglas declarativas (required, min/max, regex, enum).
 - Genera un informe de auditoría (JSON + Markdown) con score y evaluación de reglas de decisión.
+- Robustez frente a salidas “sucias” del LLM (comentarios, comas finales, fences, números malformados como `5.489.11`).
+- Evidencias con RAG (ChromaDB) con caché y persistencia por documento (hash).
 - Expone API (FastAPI) y UI (Streamlit).
 - Incluye pruebas unitarias (schema/normalización/validación/auditoría/grafo).
 
@@ -86,18 +88,30 @@ ollama list
 Modelos esperados:
 
 - `qwen2.5vl:7b`
-- `mistral:7b-instruct`
-- `llama3.2:3b` (clasificación)
+- `llama3.2:3b` (texto por defecto + clasificación)
+- `mistral:7b-instruct` (opcional; suele ser más lento en CPU)
 - `nomic-embed-text` (embeddings para ChromaDB)
 
 Si falta alguno:
 
 ```powershell
 ollama pull qwen2.5vl:7b
-ollama pull mistral:7b-instruct
 ollama pull llama3.2:3b
+ollama pull mistral:7b-instruct
 ollama pull nomic-embed-text
 ```
+
+## Configuración (variables de entorno)
+
+Puedes ajustar el comportamiento sin tocar código:
+
+- `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
+- `OLLAMA_TEXT_MODEL` (default: `llama3.2:3b`)
+- `OLLAMA_CLASSIFIER_MODEL` (default: `llama3.2:3b`)
+- `OLLAMA_EMBEDDING_MODEL` (default: `nomic-embed-text`)
+- `OLLAMA_TIMEOUT_S` (default: `600`)
+- `OLLAMA_TEXT_NUM_PREDICT` (default: `256`)
+- `OLLAMA_CLASSIFIER_NUM_PREDICT` (default: `64`)
 
 ## Ejecutar pruebas
 
@@ -198,7 +212,7 @@ Para PDFs nativos, si tienes instalada la librería `docling`, el sistema intent
 1) Crear y activar `.venv`.
 2) Instalar dependencias (`requirements.txt`).
 3) Instalar y abrir Ollama.
-4) Descargar modelos (`qwen2.5vl:7b`, `mistral:7b-instruct`, `llama3.2:3b`).
+4) Descargar modelos (`qwen2.5vl:7b`, `llama3.2:3b`, `nomic-embed-text`; `mistral:7b-instruct` opcional).
 5) Ejecutar pruebas (`pytest`).
 6) Levantar UI (`streamlit run ui/app.py`) o API (`uvicorn api.main:app --reload`).
 7) Probar:
@@ -212,6 +226,9 @@ Para PDFs nativos, si tienes instalada la librería `docling`, el sistema intent
 - `&&` no funciona en tu PowerShell: usa `;` para encadenar comandos.
 - Error “could not connect to running instance” en Ollama: abre la app de Ollama y reintenta `ollama list`.
 - Modelo de visión: el tag correcto es `qwen2.5vl:7b` (sin guion entre 5 y vl).
+- `ReadTimeout` en extracción: sube `OLLAMA_TIMEOUT_S` (ej: 600) y/o usa `llama3.2:3b` como modelo de texto (más rápido en CPU).
+- La terminal no para un proceso `python.exe`: mata el PID con `Stop-Process -Id <PID> -Force`.
+- Reglas “NO EVALUABLE”: faltan campos en el contexto (ej: reglas hipotecarias requieren IRPF + extracto; si solo envías extracto, se marca como `REVISAR`).
 
 ## Stack recomendado (opcional)
 

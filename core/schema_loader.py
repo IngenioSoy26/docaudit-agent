@@ -30,7 +30,7 @@ def _map_tipo_dato(tipo_dato: str) -> str:
     return "string"
 
 
-def _field_from_campo(campo: dict) -> SchemaField:
+def _field_from_campo(campo: dict, *, document_type: str | None = None) -> SchemaField:
     name = campo.get("nombre")
     field_type = _map_tipo_dato(campo.get("tipo_dato", "string"))
     required = bool(campo.get("requerido", False))
@@ -59,6 +59,7 @@ def _field_from_campo(campo: dict) -> SchemaField:
         type=field_type,  # type: ignore[arg-type]
         required=required,
         description=description,
+        document_type=document_type,
         rules=rules,
     )
 
@@ -83,7 +84,7 @@ def _load_new_format(raw: dict) -> DocSchema:
             if isinstance(campos, list):
                 for campo in campos:
                     if isinstance(campo, dict):
-                        fields.append(_field_from_campo(campo))
+                        fields.append(_field_from_campo(campo, document_type=str(doc_type) if doc_type else None))
 
     decision_rules: list[DecisionRule] = []
     reglas = raw.get("reglas_decision") or []

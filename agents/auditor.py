@@ -212,7 +212,14 @@ def audit_document(
     failed_critical = [
         r for r in rule_results if r.severidad == "critica" and r.cumple is False
     ]
-    status = "APROBADO" if report_json["valid"] and not failed_critical else "REVISAR"
+    unknown_critical = [
+        r for r in rule_results if r.severidad == "critica" and r.cumple is None
+    ]
+    status = (
+        "APROBADO"
+        if report_json["valid"] and not failed_critical and not unknown_critical
+        else "REVISAR"
+    )
 
     md_lines: list[str] = []
     md_lines.append(f"# Informe de auditoría — {schema.name}")

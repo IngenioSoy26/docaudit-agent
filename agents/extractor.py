@@ -7,7 +7,11 @@ from typing import Any
 
 from core.llm import get_text_llm
 from core.schema_models import DocSchema
-from core.rag import build_chunks_from_pages, build_chunks_from_text, retrieve_best_evidence
+from core.rag import (
+    build_chunks_from_pages,
+    build_chunks_from_text,
+    retrieve_best_evidence_batch,
+)
 
 
 def _schema_instructions(schema: DocSchema) -> str:
@@ -15,14 +19,17 @@ def _schema_instructions(schema: DocSchema) -> str:
     lines.append("Devuelve SOLO JSON válido (RFC 8259).")
     lines.append("Usa comillas dobles para claves y strings. No uses comas finales ni comentarios.")
     lines.append("No incluyas comentarios (// o /* */) ni texto fuera del JSON.")
+    lines.append("Para números: NO uses separadores de miles (ni '.' ni ','). Usa '.' solo como separador decimal.")
+    lines.append("Si el número aparece en formato local (ej: 5.489,11), envíalo como string.")
     lines.append("Devuelve una lista JSON de objetos CampoExtraido, uno por campo del esquema.")
     lines.append("CampoExtraido = {")
     lines.append('  "nombre": string,')
     lines.append('  "valor": string|number|boolean|null,')
     lines.append('  "confianza": number (0.0-1.0),')
-    lines.append('  "evidencia_textual": string,')
+    lines.append('  "evidencia_textual": string (puede ser "" y debe ser corto),')
     lines.append('  "pagina": integer')
     lines.append("}")
+    lines.append('Para "evidencia_textual", usa "" (será completado con RAG).')
     lines.append("Los nombres deben coincidir exactamente con estos campos:")
     for f in schema.fields:
         lines.append(f'- "{f.name}" ({f.type}) requerido={f.required}')
@@ -31,8 +38,117 @@ def _schema_instructions(schema: DocSchema) -> str:
     return "\n".join(lines)
 
 
+def _parse_number_str(raw: str) -> float | None:
+    s = raw.strip()
+    s = s.replace("€", "").replace("$", "")
+    s = re.sub(r"\s+", "", s)
+    lower = s.lower()
+    lower = (
+        lower.replace("eur", "")
+        .replace("euros", "")
+        .replace("euro", "")
+        .replace("usd", "")
+        .replace("cop", "")
+    )
+    s = re.sub(r"[^0-9,.\-+]", "", lower)
+
+    if re.fullmatch(r"[-+]?\d+([.,]\d+)?", s) is None and re.fullmatch(
+        r"[-+]?\d{1,3}([.,]\d{3})+([.,]\d+)?", s
+    ) is None:
+        return None
+
+    has_dot = "." in s
+    has_comma = "," in s
+
+    if has_dot and has_comma:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "")
+            s = s.replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif has_comma and not has_dot:
+        s = s.replace(",", ".")
+
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _heuristic_total_gastos_mensuales(text: str) -> float | None:
+    t = (text or "").strip()
+    if not t:
+        return None
+
+    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+    triggers = [
+        "transferencia enviada",
+        "transferencia emitida",
+        "pago",
+        "cargo",
+        "adeudo",
+        "retirada",
+        "compra",
+    ]
+    num_like = re.compile(r"[-+]?\d[\d\.,]*\d")
+    amounts: list[float] = []
+    for i, ln in enumerate(lines):
+        low = ln.lower()
+        if not any(tr in low for tr in triggers):
+            continue
+        for j in range(i + 1, min(i + 5, len(lines))):
+            m = num_like.fullmatch(lines[j])
+            if not m:
+                continue
+            val = _parse_number_str(lines[j])
+            if isinstance(val, float):
+                amounts.append(abs(val))
+                break
+
+    if not amounts:
+        return None
+    return round(sum(amounts), 2)
+
+
 def _safe_json_parse(text: str) -> Any:
     raw = (text or "").strip()
+
+    def _fix_malformed_numbers(s: str) -> str:
+        def _fix_token(token: str) -> str:
+            t = token.strip()
+
+            if "," in t and "." in t:
+                if re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+,\d{1,2}", t):
+                    left, dec = t.split(",")
+                    left = left.replace(".", "")
+                    return f"{left}.{dec}"
+                if re.fullmatch(r"-?\d{1,3}(?:,\d{3})+\.\d{1,2}", t):
+                    return t.replace(",", "")
+                return t
+
+            if "," in t:
+                if re.fullmatch(r"-?\d+,\d{1,2}", t):
+                    return t.replace(",", ".")
+                if re.fullmatch(r"-?\d{1,3}(?:,\d{3})+", t):
+                    return t.replace(",", "")
+                return t
+
+            if "." in t and t.count(".") >= 2 and re.fullmatch(r"-?\d+(?:\.\d+){2,}", t):
+                parts = t.split(".")
+                last = parts[-1]
+                if len(last) in {1, 2}:
+                    return f"{''.join(parts[:-1])}.{last}"
+                return "".join(parts)
+
+            return t
+
+        def _repl(match: re.Match[str]) -> str:
+            prefix = match.group(1)
+            token = match.group(2)
+            return prefix + _fix_token(token)
+
+        pattern = r'(:\s*)(-?\d[\d\.,]*\d)(?=\s*[,}\]])'
+        return re.sub(pattern, _repl, s)
 
     def _strip_js_style_comments(s: str) -> str:
         out: list[str] = []
@@ -109,13 +225,14 @@ def _safe_json_parse(text: str) -> Any:
         last_err: Exception | None = None
         for cand in candidates:
             cand = _strip_js_style_comments(cand).strip()
-            for attempt in (cand, _remove_trailing_commas(cand)):
+            for attempt in (cand, _remove_trailing_commas(cand), _fix_malformed_numbers(_remove_trailing_commas(cand))):
                 try:
                     return json.loads(attempt)
                 except Exception as e:
                     last_err = e
 
             py_like = _remove_trailing_commas(cand)
+            py_like = _fix_malformed_numbers(py_like)
             py_like = re.sub(r"\bnull\b", "None", py_like, flags=re.IGNORECASE)
             py_like = re.sub(r"\btrue\b", "True", py_like, flags=re.IGNORECASE)
             py_like = re.sub(r"\bfalse\b", "False", py_like, flags=re.IGNORECASE)
@@ -135,13 +252,30 @@ def extract_from_text(
     pages: list[str] | None = None,
     doc_id: str | None = None,
 ) -> dict[str, Any]:
+    if schema.name == "credito_hipotecario" and len(schema.fields) == 1:
+        only = schema.fields[0]
+        if only.name == "total_gastos_mensuales":
+            total = _heuristic_total_gastos_mensuales(text)
+            if total is not None:
+                fields: dict[str, Any] = {"total_gastos_mensuales": total}
+                details: dict[str, Any] = {
+                    "total_gastos_mensuales": {
+                        "nombre": "total_gastos_mensuales",
+                        "valor": total,
+                        "confianza": 0.7,
+                        "evidencia_textual": "",
+                        "pagina": 1,
+                    }
+                }
+                return {"fields": fields, "details": details}
+
     llm = get_text_llm()
     prompt = (
         f"{_schema_instructions(schema)}\n\n"
         "Texto de entrada:\n"
         f"{text}\n"
     )
-    response = llm.invoke(prompt)
+    response = llm.invoke(prompt, stream=False)
     raw = response.content if isinstance(response.content, str) else str(response.content)
     allowed = {f.name for f in schema.fields}
     parsed = _safe_json_parse(raw)
@@ -179,6 +313,9 @@ def extract_from_text(
         )
 
     chunks = build_chunks_from_pages(pages) if pages else build_chunks_from_text(text)
+    names: list[str] = []
+    queries: list[str] = []
+    values: list[Any] = []
     for f in schema.fields:
         name = f.name
         label = f.description or name
@@ -186,15 +323,22 @@ def extract_from_text(
         q = f"{label}"
         if isinstance(value, str) and value.strip():
             q = f"{label}: {value}"
-        hits = retrieve_best_evidence(q, chunks, top_k=1, doc_id=doc_id)
-        if hits:
-            hit = hits[0]
-            meta = hit.get("metadata") or {}
-            if details.get(name) is None or not isinstance(details.get(name), dict):
-                details[name] = {"nombre": name, "valor": value, "confianza": None, "evidencia_textual": "", "pagina": 1}
-            details[name]["evidencia_textual"] = hit.get("text") or details[name].get("evidencia_textual") or ""
-            page = meta.get("page")
-            if isinstance(page, int) and page > 0:
-                details[name]["pagina"] = page
+        names.append(name)
+        queries.append(q)
+        values.append(value)
+
+    hits_by_query = retrieve_best_evidence_batch(queries, chunks, top_k=1, doc_id=doc_id)
+    for idx, name in enumerate(names):
+        hits = hits_by_query[idx] if idx < len(hits_by_query) else []
+        if not hits:
+            continue
+        hit = hits[0]
+        meta = hit.get("metadata") or {}
+        if details.get(name) is None or not isinstance(details.get(name), dict):
+            details[name] = {"nombre": name, "valor": values[idx], "confianza": None, "evidencia_textual": "", "pagina": 1}
+        details[name]["evidencia_textual"] = hit.get("text") or details[name].get("evidencia_textual") or ""
+        page = meta.get("page")
+        if isinstance(page, int) and page > 0:
+            details[name]["pagina"] = page
 
     return {"fields": fields, "details": details}
