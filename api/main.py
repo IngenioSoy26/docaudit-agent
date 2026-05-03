@@ -16,6 +16,7 @@ class ExtractRequest(BaseModel):
 class ExtractResponse(BaseModel):
     schema: dict[str, Any]
     extracted: dict[str, Any]
+    validation: dict[str, Any]
 
 
 @app.get("/health")
