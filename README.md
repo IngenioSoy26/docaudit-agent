@@ -8,6 +8,7 @@ Este repositorio ya incluye un MVP funcional que:
 
 - Carga un esquema YAML desde `schemas/`.
 - Ejecuta un pipeline mínimo: clasifica → extrae campos vía LLM local (Ollama) → devuelve JSON.
+- Normaliza el resultado extraído (ej. fechas e importes a formatos consistentes) antes de validar.
 - Valida el resultado extraído contra reglas del esquema (requeridos, min/max, etc.).
 - Expone un endpoint FastAPI para probar la extracción.
 - Incluye una prueba unitaria básica.
@@ -103,6 +104,7 @@ curl -X POST "http://127.0.0.1:8000/extract" -H "Content-Type: application/json"
 - `core/schema_loader.py`: carga y valida YAML con Pydantic.
 - `agents/classifier.py`: clasificador heurístico mínimo.
 - `agents/extractor.py`: extractor con LLM local (Ollama) que devuelve JSON.
+- `core/normalizer.py`: normalización de tipos/formato (fechas, números, strings).
 - `core/orchestrator.py`: orquesta clasificador + esquema + extractor.
 - `core/validator.py`: validación de campos extraídos contra el esquema.
 - `api/main.py`: endpoints `/health` y `/extract`.
