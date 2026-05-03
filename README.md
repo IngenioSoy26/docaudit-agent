@@ -108,3 +108,11 @@ curl -X POST "http://127.0.0.1:8000/extract" -H "Content-Type: application/json"
 - `core/orchestrator.py`: orquesta clasificador + esquema + extractor.
 - `core/validator.py`: validación de campos extraídos contra el esquema.
 - `api/main.py`: endpoints `/health` y `/extract`.
+
+## Ejecutar la UI (Streamlit)
+
+En una terminal con `(.venv)` activo:
+
+```powershell
+streamlit run ui/app.py
+```
