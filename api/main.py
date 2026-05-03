@@ -1,8 +1,9 @@
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from pydantic import BaseModel, Field
 
+from core.document_loader import extract_text_from_pdf_bytes
 from core.orchestrator import run_pipeline
 
 
@@ -29,4 +30,12 @@ def health() -> dict[str, str]:
 @app.post("/extract", response_model=ExtractResponse)
 def extract(req: ExtractRequest) -> ExtractResponse:
     result = run_pipeline(req.text)
+    return ExtractResponse(**result)
+
+
+@app.post("/extract_pdf", response_model=ExtractResponse)
+async def extract_pdf(file: UploadFile = File(...)) -> ExtractResponse:
+    pdf_bytes = await file.read()
+    extracted = extract_text_from_pdf_bytes(pdf_bytes)
+    result = run_pipeline(extracted["text"])
     return ExtractResponse(**result)

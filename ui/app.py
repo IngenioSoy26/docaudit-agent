@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from core.document_loader import extract_text_from_pdf_bytes  # noqa: E402
 from core.orchestrator import run_pipeline  # noqa: E402
 from core.schema_loader import load_schema  # noqa: E402
 from core.normalizer import normalize_extracted  # noqa: E402
@@ -20,6 +21,16 @@ st.set_page_config(page_title="DocAudit Agent", layout="wide")
 st.title("DocAudit Agent")
 
 st.write("Pega texto (o el contenido extraído de un documento) y ejecuta el pipeline: extraer → normalizar → validar.")
+
+uploaded_pdf = st.file_uploader("Subir PDF (nativo)", type=["pdf"])
+if uploaded_pdf is not None:
+    pdf_bytes = uploaded_pdf.read()
+    extracted = extract_text_from_pdf_bytes(pdf_bytes)
+    st.write(f"Páginas detectadas: {extracted['pages']}")
+    if extracted["text"]:
+        st.session_state["input_text"] = extracted["text"]
+    else:
+        st.warning("No se pudo extraer texto. Si el PDF es escaneado, necesitaremos la ruta de OCR/VL.")
 
 col_left, col_right = st.columns([2, 1])
 

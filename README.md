@@ -116,3 +116,9 @@ En una terminal con `(.venv)` activo:
 ```powershell
 streamlit run ui/app.py
 ```
+
+## Soporte PDF (MVP)
+
+La UI permite subir un PDF "nativo" (con texto seleccionable). Al subirlo, se extrae el texto y se ejecuta el pipeline.
+
+Si el PDF es escaneado y no tiene texto embebido, esta ruta puede devolver texto vacío. En ese caso, el siguiente paso es integrar extracción con visión (Qwen2.5-VL) u OCR.
