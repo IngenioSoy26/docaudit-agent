@@ -32,7 +32,17 @@ def _schema_instructions(schema: DocSchema) -> str:
     lines.append('Para "evidencia_textual", usa "" (será completado con RAG).')
     lines.append("Los nombres deben coincidir exactamente con estos campos:")
     for f in schema.fields:
-        lines.append(f'- "{f.name}" ({f.type}) requerido={f.required}')
+        enum_vals: list[str] | None = None
+        for r in f.rules:
+            if r.kind == "enum":
+                vals = r.params.get("values")
+                if isinstance(vals, list) and all(isinstance(x, (str, int, float, bool)) for x in vals):
+                    enum_vals = [str(x) for x in vals]
+                break
+        if enum_vals:
+            lines.append(f'- "{f.name}" ({f.type}) requerido={f.required} valores_permitidos={enum_vals}')
+        else:
+            lines.append(f'- "{f.name}" ({f.type}) requerido={f.required}')
     lines.append("Si no encuentras un valor, usa null.")
     lines.append("Si no puedes determinar la página, usa 1.")
     return "\n".join(lines)

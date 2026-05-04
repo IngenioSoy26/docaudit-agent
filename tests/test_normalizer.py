@@ -23,3 +23,17 @@ def test_normalize_enum_tipo_documento_from_noisy_string():
     extracted = {"tipo_documento": "DNI 36389218D"}
     result = normalize_extracted(extracted, schema)
     assert result["normalized"]["tipo_documento"] == "DNI"
+
+
+def test_normalize_null_string_to_none():
+    schema = load_schema("schemas/kyc_onboarding.yaml")
+    extracted = {"fecha_caducidad": "null"}
+    result = normalize_extracted(extracted, schema)
+    assert result["normalized"]["fecha_caducidad"] is None
+
+
+def test_infer_tipo_documento_from_numero_documento():
+    schema = load_schema("schemas/kyc_onboarding.yaml")
+    extracted = {"tipo_documento": "string", "numero_documento": "36389218D"}
+    result = normalize_extracted(extracted, schema)
+    assert result["normalized"]["tipo_documento"] == "DNI"

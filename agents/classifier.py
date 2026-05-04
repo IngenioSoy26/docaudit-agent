@@ -11,12 +11,15 @@ def classify_text(text: str) -> str:
     kyc_keywords = [
         "kyc",
         "onboarding",
-        "dni",
-        "nie",
         "pasaporte",
         "empadronamiento",
         "código postal",
         "codigo postal",
+        "nacionalidad",
+        "fecha de caducidad",
+        "fecha caducidad",
+        "fecha de expedicion",
+        "justificante",
     ]
     if any(k in t for k in kyc_keywords):
         return "kyc_onboarding"
@@ -42,6 +45,10 @@ def classify_text(text: str) -> str:
         "prestamo",
         "nota simple",
         "registro de la propiedad",
+        "comparecen",
+        "tasa de interes",
+        "tasa_interes",
+        "monto_prestamo",
     ]
     if any(k in t for k in hipotecario_keywords):
         return "credito_hipotecario"

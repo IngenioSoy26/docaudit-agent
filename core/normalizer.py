@@ -165,6 +165,11 @@ def _normalize_field(field: SchemaField, value: Any) -> tuple[Any, list[Normaliz
             changes.append(NormalizationChange(field=field.name, kind="trim", before=value, after=trimmed))
             value = trimmed
 
+        lower = trimmed.strip().lower()
+        if lower in {"null", "none", "no encontrado", "no encontrado.", "n/a", "na"}:
+            changes.append(NormalizationChange(field=field.name, kind="coerce", before=trimmed, after=None))
+            return None, changes
+
         if enum_values:
             s = trimmed.upper()
             s = re.sub(r"[\s\.\-_/]+", " ", s).strip()
@@ -224,6 +229,30 @@ def normalize_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[st
         after, field_changes = _normalize_field(field, before)
         normalized[field.name] = after
         changes.extend(field_changes)
+
+    tipo_field = next((f for f in schema.fields if f.name == "tipo_documento"), None)
+    num_field = next((f for f in schema.fields if f.name == "numero_documento"), None)
+    if tipo_field and num_field:
+        allowed: list[str] | None = None
+        for r in tipo_field.rules:
+            if r.kind == "enum":
+                vals = r.params.get("values")
+                if isinstance(vals, list):
+                    allowed = [str(x) for x in vals]
+                break
+
+        current = normalized.get("tipo_documento")
+        numero = normalized.get("numero_documento")
+        if allowed and (current is None or current not in allowed) and isinstance(numero, str):
+            n = numero.strip().upper()
+            inferred = None
+            if re.fullmatch(r"\d{8}[A-Z]", n) and any(a.upper() == "DNI" for a in allowed):
+                inferred = next(a for a in allowed if a.upper() == "DNI")
+            elif re.fullmatch(r"[XYZ]\d{7}[A-Z]", n) and any(a.upper() == "NIE" for a in allowed):
+                inferred = next(a for a in allowed if a.upper() == "NIE")
+            if inferred is not None:
+                changes.append(NormalizationChange(field="tipo_documento", kind="coerce", before=current, after=inferred))
+                normalized["tipo_documento"] = inferred
 
     return {
         "normalized": normalized,
