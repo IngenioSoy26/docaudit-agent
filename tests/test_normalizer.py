@@ -16,3 +16,10 @@ def test_normalize_date_and_number():
     assert normalized["titular_nombre"] == "María López Sánchez"
     assert normalized["importe_prestamo"] == 245000.5
     assert normalized["fecha_firma"] == "2023-11-22"
+
+
+def test_normalize_enum_tipo_documento_from_noisy_string():
+    schema = load_schema("schemas/kyc_onboarding.yaml")
+    extracted = {"tipo_documento": "DNI 36389218D"}
+    result = normalize_extracted(extracted, schema)
+    assert result["normalized"]["tipo_documento"] == "DNI"

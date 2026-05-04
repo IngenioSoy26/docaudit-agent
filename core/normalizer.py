@@ -151,11 +151,38 @@ def _normalize_field(field: SchemaField, value: Any) -> tuple[Any, list[Normaliz
     if _is_empty(value):
         return None, changes
 
+    enum_values: list[str] | None = None
+    for r in field.rules:
+        if r.kind == "enum":
+            vals = r.params.get("values")
+            if isinstance(vals, list) and all(isinstance(x, (str, int, float, bool)) for x in vals):
+                enum_values = [str(x) for x in vals]
+            break
+
     if isinstance(value, str):
         trimmed = value.strip()
         if trimmed != value:
             changes.append(NormalizationChange(field=field.name, kind="trim", before=value, after=trimmed))
             value = trimmed
+
+        if enum_values:
+            s = trimmed.upper()
+            s = re.sub(r"[\s\.\-_/]+", " ", s).strip()
+            canonical = None
+            for ev in enum_values:
+                if s == ev.upper():
+                    canonical = ev
+                    break
+            if canonical is None:
+                if "DNI" in s and any(ev.upper() == "DNI" for ev in enum_values):
+                    canonical = next(ev for ev in enum_values if ev.upper() == "DNI")
+                elif "NIE" in s and any(ev.upper() == "NIE" for ev in enum_values):
+                    canonical = next(ev for ev in enum_values if ev.upper() == "NIE")
+                elif "PASAPORTE" in s and any(ev.upper() == "PASAPORTE" for ev in enum_values):
+                    canonical = next(ev for ev in enum_values if ev.upper() == "PASAPORTE")
+            if canonical is not None and canonical != trimmed:
+                changes.append(NormalizationChange(field=field.name, kind="coerce", before=trimmed, after=canonical))
+                value = canonical
 
     if field.type == "string":
         return value, changes
