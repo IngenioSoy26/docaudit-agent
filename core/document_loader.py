@@ -7,6 +7,7 @@ from typing import Any
 from pypdf import PdfReader
 
 from core.ollama_http import chat_with_images
+from core.settings import settings
 
 
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
@@ -47,6 +48,28 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
     return {"text": text, "pages": pages, "page_texts": page_texts, "method": "pypdf"}
 
 
+def _downscale_image_bytes(data: bytes) -> bytes:
+    try:
+        from PIL import Image
+    except Exception:
+        return data
+
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im = im.convert("RGB")
+            w, h = im.size
+            max_dim = int(getattr(settings, "ollama_vision_max_dim", 1280) or 1280)
+            if max(w, h) > max_dim and max_dim > 0:
+                im.thumbnail((max_dim, max_dim))
+            quality = int(getattr(settings, "ollama_vision_jpeg_quality", 70) or 70)
+            quality = max(30, min(95, quality))
+            out = io.BytesIO()
+            im.save(out, format="JPEG", quality=quality, optimize=True)
+            return out.getvalue() or data
+    except Exception:
+        return data
+
+
 def extract_images_from_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
     reader = PdfReader(io.BytesIO(pdf_bytes))
     results: list[dict[str, Any]] = []
@@ -61,6 +84,7 @@ def extract_images_from_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
         data = getattr(best, "data", b"") or b""
         if not data:
             continue
+        data = _downscale_image_bytes(data)
         results.append({"page": i + 1, "data": data, "name": getattr(best, "name", None)})
     return results
 
