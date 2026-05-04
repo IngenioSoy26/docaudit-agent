@@ -72,9 +72,11 @@ def extract_text_from_scanned_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
         return {"text": "", "pages": pages, "images": 0}
 
     prompt = (
-        "Transcribe el contenido del documento en texto plano (español si aplica). "
+        "Extrae y transcribe SOLO la información útil para auditoría y extracción de campos. "
+        "Prioriza: nombres, identificadores (DNI/NIF/CIF), fechas, importes, porcentajes, direcciones, IBAN y títulos de secciones. "
+        "Evita transcribir párrafos legales largos repetitivos. "
         "No inventes información. Si no se ve, déjalo en blanco. "
-        "Mantén saltos de línea cuando sea útil."
+        "Devuelve texto plano con saltos de línea."
     )
 
     texts: list[str] = []

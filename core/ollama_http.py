@@ -14,6 +14,8 @@ def chat_with_images(prompt: str, images: list[bytes], model: str | None = None)
     payload: dict[str, Any] = {
         "model": model or settings.ollama_vision_model,
         "stream": False,
+        "keep_alive": "10m",
+        "options": {"num_predict": settings.ollama_vision_num_predict, "temperature": 0},
         "messages": [
             {
                 "role": "user",

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     ollama_embedding_model: str = Field(default="nomic-embed-text")
     ollama_timeout_s: int = Field(default=600)
     ollama_text_num_predict: int = Field(default=256)
+    ollama_vision_num_predict: int = Field(default=384)
     ollama_classifier_num_predict: int = Field(default=64)
     rag_persist_dir: str = Field(default=".chroma")
 
