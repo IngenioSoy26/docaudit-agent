@@ -44,6 +44,12 @@ def _infer_document_type(schema: DocSchema, text: str) -> str | None:
         return None
 
     hit = _pick(
+        triggers=["cirbe", "incidencias", "riesgos", "deuda vigente", "deuda_vigente"],
+        type_hints=["cirbe"],
+    )
+    if hit:
+        return hit
+    hit = _pick(
         triggers=["iban", "saldo", "transferencia", "movimiento", "extracto bancario"],
         type_hints=["extracto", "bancario"],
     )

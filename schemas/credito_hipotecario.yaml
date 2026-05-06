@@ -1,34 +1,54 @@
 caso_uso: credito_hipotecario
 version: "1.0"
 descripcion: >
-  Esquema para evaluación de solvencia hipotecaria. Integra IRPF, facturas recurrentes
-  y extractos bancarios, con reglas básicas de decisión.
+  Esquema para evaluación de solvencia hipotecaria. Integra IRPF, facturas y CIRBE, y permite
+  procesar documentos de soporte (p.ej. extractos bancarios) con reglas de decisión.
 
 documentos:
   - tipo: IRPF
     descripcion: "Declaración IRPF del solicitante"
     campos:
-      - nombre: nif_declarante
-        etiqueta: "NIF del declarante"
-        tipo_dato: string
-        requerido: true
-        patron: "^[0-9]{8}[A-Z]$"
-      - nombre: rendimientos_trabajo
-        etiqueta: "Rendimientos del trabajo"
+      - nombre: base_imponible_general
+        etiqueta: "Base imponible general (casilla 435)"
         tipo_dato: float
         requerido: true
+        validacion:
+          rango_min: 0.0
+      - nombre: cuota_liquida_estatal
+        etiqueta: "Cuota líquida estatal (casilla 570)"
+        tipo_dato: float
+        requerido: false
         validacion:
           rango_min: 0.0
 
   - tipo: FACTURA
     descripcion: "Factura de gasto recurrente"
     campos:
+      - nombre: nif_emisor
+        etiqueta: "NIF del emisor"
+        tipo_dato: string
+        requerido: true
+        patron: "^[A-Z0-9]{9}$"
       - nombre: importe_total_iva
         etiqueta: "Importe total con IVA"
         tipo_dato: float
-        requerido: false
+        requerido: true
         validacion:
           rango_min: 0.0
+
+  - tipo: CIRBE
+    descripcion: "Informe CIRBE"
+    campos:
+      - nombre: deuda_vigente
+        etiqueta: "Deuda vigente"
+        tipo_dato: float
+        requerido: true
+        validacion:
+          rango_min: 0.0
+      - nombre: incidencias_activas
+        etiqueta: "Incidencias activas"
+        tipo_dato: boolean
+        requerido: true
 
   - tipo: EXTRACTO_BANCARIO
     descripcion: "Extracto bancario"
@@ -43,12 +63,16 @@ documentos:
 reglas_decision:
   - id: R01
     descripcion: "Renta anual mínima"
-    expresion: "rendimientos_trabajo >= 24000"
+    expresion: "base_imponible_general >= 24000"
     severidad: critica
   - id: R02
     descripcion: "Ratio deuda/renta máximo 35%"
-    expresion: "total_gastos_mensuales / (rendimientos_trabajo / 12) <= 0.35"
+    expresion: "deuda_vigente / base_imponible_general <= 0.35"
     severidad: advertencia
+  - id: R03
+    descripcion: "Sin incidencias activas en CIRBE"
+    expresion: "incidencias_activas == false"
+    severidad: critica
 
 informe:
   formato: ["json", "markdown"]

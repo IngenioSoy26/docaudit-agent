@@ -75,3 +75,22 @@ def test_heuristic_total_gastos_mensuales_from_transferencias():
         ]
     )
     assert _heuristic_total_gastos_mensuales(text) == 681.21
+
+
+def test_credito_hipotecario_rules_evaluable_with_complete_context():
+    schema = load_schema("schemas/credito_hipotecario.yaml")
+    extracted = {
+        "base_imponible_general": 30000.0,
+        "cuota_liquida_estatal": 2500.0,
+        "nif_emisor": "B12345678",
+        "importe_total_iva": 121.0,
+        "deuda_vigente": 9000.0,
+        "incidencias_activas": False,
+        "total_gastos_mensuales": 700.0,
+    }
+    validation = validate_extracted(extracted, schema)
+    report = audit_document(schema, extracted, validation)
+    rules = {r["id"]: r for r in report["json"]["decision_rules"]}
+    assert rules["R01"]["cumple"] is True
+    assert rules["R02"]["cumple"] is True
+    assert rules["R03"]["cumple"] is True
