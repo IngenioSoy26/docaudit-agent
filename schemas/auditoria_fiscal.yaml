@@ -57,14 +57,17 @@ reglas_decision:
     descripcion: "Validación matemática del IVA"
     expresion: "abs(cuota_iva - (base_imponible * (tipo_iva / 100))) <= 0.05"
     severidad: advertencia
+    normativa: "Real Decreto 1619/2012 (obligaciones de facturación) — coherencia de IVA"
   - id: RF02
     descripcion: "Consistencia del importe total facturado"
     expresion: "abs(importe_total - (base_imponible + cuota_iva - coalesce(retencion_irpf, 0))) <= 0.05"
     severidad: advertencia
+    normativa: "Real Decreto 1619/2012 (obligaciones de facturación) — consistencia de totales"
   - id: RF03
     descripcion: "Tipos de IVA legales"
     expresion: "tipo_iva in [21, 10, 4, 0]"
     severidad: critica
+    normativa: "Ley 37/1992 del IVA (tipos impositivos)"
 
 informe:
   formato: ["json", "markdown"]

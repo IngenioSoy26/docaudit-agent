@@ -106,26 +106,32 @@ reglas_decision:
     descripcion: "Límite de comisión de apertura (<= 2% del capital)"
     expresion: "coalesce(comision_apertura, 0) <= (capital_prestamo * 0.02)"
     severidad: advertencia
+    normativa: "Ley 5/2019, reguladora de los contratos de crédito inmobiliario (LCCI)"
   - id: H02
     descripcion: "TIN en rango comercial (0-15%)"
     expresion: "tasa_interes_nominal > 0.00 and tasa_interes_nominal <= 15.00"
     severidad: advertencia
+    normativa: "Criterio de coherencia de mercado (no normativa específica)"
   - id: H03
     descripcion: "Plazo máximo de amortización (<= 30 años)"
     expresion: "plazo_amortizacion_anos > 0 and plazo_amortizacion_anos <= 30"
     severidad: advertencia
+    normativa: "Criterio de mercado (no normativa específica)"
   - id: R01
     descripcion: "Renta anual mínima"
     expresion: "base_imponible_general >= 24000"
     severidad: critica
+    normativa: "Política interna de riesgo (umbral configurable)"
   - id: R02
     descripcion: "Ratio deuda/renta máximo 35%"
     expresion: "deuda_vigente / base_imponible_general <= 0.35"
     severidad: advertencia
+    normativa: "Política interna de riesgo (ratio DTI/DTI-like)"
   - id: R03
     descripcion: "Sin incidencias activas en CIRBE"
     expresion: "incidencias_activas == false"
     severidad: critica
+    normativa: "Banco de España — CIRBE (control de incidencias)"
 
 informe:
   formato: ["json", "markdown"]

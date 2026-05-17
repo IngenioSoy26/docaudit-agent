@@ -43,14 +43,17 @@ reglas_decision:
     descripcion: "Mayoría de edad (>= 18)"
     expresion: "(fecha_actual - fecha_nacimiento).days / 365.25 >= 18"
     severidad: critica
+    normativa: "España — mayoría de edad (18 años)"
   - id: RK02
     descripcion: "Documento de identidad no caducado"
     expresion: "fecha_caducidad > fecha_actual"
     severidad: critica
+    normativa: "KYC/Onboarding — vigencia documental (control operativo)"
   - id: RK03
     descripcion: "Documento no marcado como 'No encontrado'"
     expresion: "num_documento != 'No encontrado'"
     severidad: advertencia
+    normativa: "Ley 10/2010 (PBC/FT) — diligencia debida (SEPBLAC)"
 
 informe:
   formato: ["json", "markdown"]
