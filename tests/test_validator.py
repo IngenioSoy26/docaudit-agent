@@ -3,13 +3,17 @@ from core.validator import validate_extracted
 
 
 def test_validate_extracted_ok():
-    schema = load_schema("schemas/hipotecario.yaml")
+    schema = load_schema("schemas/auditoria_fiscal.yaml")
     extracted = {
-        "titular_nombre": "María López Sánchez",
-        "titular_identificacion": "X1234567T",
-        "entidad_financiera": "Banco Ejemplo S.A.",
-        "importe_prestamo": 245000,
-        "fecha_firma": "2023-11-22",
+        "razon_social_emisor": "Proveedor Demo S.L.",
+        "nif_emisor": "A1234567B",
+        "num_factura": "FAC-2026-0001",
+        "fecha_expedicion": "2026-03-25",
+        "base_imponible": 2445.37,
+        "tipo_iva": 4,
+        "cuota_iva": 97.81,
+        "retencion_irpf": None,
+        "importe_total": 2543.18,
     }
     result = validate_extracted(extracted, schema)
     assert result["valid"] is True
@@ -17,17 +21,20 @@ def test_validate_extracted_ok():
 
 
 def test_validate_extracted_required_and_min():
-    schema = load_schema("schemas/hipotecario.yaml")
+    schema = load_schema("schemas/auditoria_fiscal.yaml")
     extracted = {
-        "titular_nombre": None,
-        "titular_identificacion": "",
-        "entidad_financiera": "Banco X",
-        "importe_prestamo": -1,
-        "fecha_firma": "2023-11-22",
+        "razon_social_emisor": "",
+        "nif_emisor": "A1234567B",
+        "num_factura": "FAC-2026-0001",
+        "fecha_expedicion": "2026-03-25",
+        "base_imponible": -1,
+        "tipo_iva": 4,
+        "cuota_iva": 97.81,
+        "retencion_irpf": None,
+        "importe_total": 2543.18,
     }
     result = validate_extracted(extracted, schema)
     assert result["valid"] is False
     codes = {(i["field"], i["code"]) for i in result["issues"]}
-    assert ("titular_nombre", "required") in codes
-    assert ("titular_identificacion", "required") in codes
-    assert ("importe_prestamo", "min") in codes
+    assert ("razon_social_emisor", "required") in codes
+    assert ("base_imponible", "min") in codes

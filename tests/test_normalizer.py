@@ -3,19 +3,23 @@ from core.schema_loader import load_schema
 
 
 def test_normalize_date_and_number():
-    schema = load_schema("schemas/hipotecario.yaml")
+    schema = load_schema("schemas/auditoria_fiscal.yaml")
     extracted = {
-        "titular_nombre": " María López Sánchez ",
-        "titular_identificacion": "X1234567T",
-        "entidad_financiera": "Banco Ejemplo S.A.",
-        "importe_prestamo": "245.000,50 EUR",
-        "fecha_firma": "22/11/2023",
+        "razon_social_emisor": "  Proveedor Demo S.L. ",
+        "nif_emisor": "A1234567B",
+        "num_factura": "FAC-2026-0001",
+        "fecha_expedicion": "25/03/2026",
+        "base_imponible": "2.445,37 EUR",
+        "tipo_iva": "4",
+        "cuota_iva": "97,81",
+        "importe_total": "2.543,18",
     }
     result = normalize_extracted(extracted, schema)
     normalized = result["normalized"]
-    assert normalized["titular_nombre"] == "María López Sánchez"
-    assert normalized["importe_prestamo"] == 245000.5
-    assert normalized["fecha_firma"] == "2023-11-22"
+    assert normalized["razon_social_emisor"] == "Proveedor Demo S.L."
+    assert normalized["base_imponible"] == 2445.37
+    assert normalized["tipo_iva"] == 4
+    assert normalized["fecha_expedicion"] == "2026-03-25"
 
 
 def test_normalize_enum_tipo_documento_from_noisy_string():

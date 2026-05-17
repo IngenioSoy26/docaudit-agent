@@ -163,35 +163,20 @@ Uso recomendado en la UI:
 
 El repositorio incluye un corpus de prueba bajo `data/sample_docs/` siguiendo la estructura descrita en la propuesta técnica:
 
-- `data/sample_docs/caso_uso_1_auditoria_hipotecaria/`: PDFs `contrato_hipoteca_esp_*.pdf` + `ground_truth_esp_*.json` + YAML de referencia.
-- `data/sample_docs/caso_uso_2_auditoria_fiscal/`: PDFs `factura_fiscal_*.pdf` + `factura_fiscal_*.json` + YAML de referencia.
-- `data/sample_docs/caso_uso_3_kyc_onboarding/`: PDFs `expediente_kyc_*.pdf` + `expediente_kyc_*.json` + YAML de referencia.
+- `data/sample_docs/caso_uso_1_auditoria_hipotecaria/`: PDFs `contrato_hipoteca_esp_*.pdf` + `ground_truth_esp_*.json`.
+- `data/sample_docs/caso_uso_2_auditoria_fiscal/`: PDFs `factura_fiscal_*.pdf` + `factura_fiscal_*.json`.
+- `data/sample_docs/caso_uso_3_kyc_onboarding/`: PDFs `expediente_kyc_*.pdf` + `expediente_kyc_*.json`.
 
 Los esquemas “canónicos” que usa el sistema están en `schemas/`:
 - `schemas/credito_hipotecario.yaml`
 - `schemas/auditoria_fiscal.yaml`
 - `schemas/kyc_onboarding.yaml`
 
-También se copian los YAML originales recibidos del equipo/plantilla para trazabilidad:
-- `schemas/CasoDeUso1_auditoria_hipotecaria.yaml`
-- `schemas/CasoDeUso2_auditoria_fiscal.yaml`
-- `schemas/CasoDeUso3_kyc_onboarding.yaml`
-
 ## Esquemas YAML
 
-Se soportan dos formatos:
+El sistema usa el formato extendido (empresa) con `caso_uso`, `documentos`, `campos`, `reglas_decision` e `informe`.
 
-### Formato simple (MVP)
-
-Ejemplo: [hipotecario.yaml](schemas/hipotecario.yaml)
-
-- `name`, `version`, `domain`
-- `document_types`
-- `fields[]` con `name/type/required/rules`
-
-### Formato extendido (empresa)
-
-Ejemplos:
+Esquemas del proyecto:
 
 - [credito_hipotecario.yaml](schemas/credito_hipotecario.yaml)
 - [auditoria_fiscal.yaml](schemas/auditoria_fiscal.yaml)
