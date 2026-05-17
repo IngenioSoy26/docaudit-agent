@@ -21,6 +21,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from ui.components import render_ground_truth_evaluation  # noqa: E402
+
 try:  # noqa: E402
     from core.document_loader import extract_text_from_pdf_bytes, extract_text_from_scanned_pdf_bytes
 except ImportError:  # noqa: E402
@@ -50,8 +52,10 @@ if uploaded_pdfs:
     expediente_texts: list[str] = []
     expediente_pages: list[list[str] | None] = []
     expediente_doc_ids: list[str] = []
+    uploaded_names: list[str] = []
     preview_lines: list[str] = []
     for i, up in enumerate(uploaded_pdfs):
+        uploaded_names.append(up.name)
         pdf_bytes = up.read()
         doc_id = hashlib.sha256(pdf_bytes).hexdigest()
         extracted = extract_text_from_pdf_bytes(pdf_bytes)
@@ -76,6 +80,7 @@ if uploaded_pdfs:
     st.session_state["expediente_texts"] = expediente_texts
     st.session_state["expediente_pages"] = expediente_pages
     st.session_state["expediente_doc_ids"] = expediente_doc_ids
+    st.session_state["uploaded_names"] = uploaded_names
     if len(expediente_texts) == 1:
         st.session_state["input_pages"] = expediente_pages[0]
         st.session_state["doc_id"] = expediente_doc_ids[0]
@@ -156,6 +161,12 @@ if run_clicked:
 
     st.subheader("Resultado")
     tab_labels = ["Extracción", "Normalización", "Validación", "Auditoría"]
+    show_gt = False
+    if "documents" not in result:
+        uploaded_names = st.session_state.get("uploaded_names")
+        show_gt = isinstance(uploaded_names, list) and len(uploaded_names) == 1 and isinstance(uploaded_names[0], str)
+    if show_gt:
+        tab_labels.append("Evaluación")
     if "documents" in result:
         tab_labels.insert(0, "Expediente")
     tabs = st.tabs(tab_labels)
@@ -164,6 +175,7 @@ if run_clicked:
         tab_expediente = tabs[idx]
         idx += 1
     tab_extracted, tab_normalization, tab_validation, tab_audit = tabs[idx], tabs[idx + 1], tabs[idx + 2], tabs[idx + 3]
+    tab_eval = tabs[idx + 4] if show_gt else None
 
     if "documents" in result:
         with tab_expediente:
@@ -208,6 +220,13 @@ if run_clicked:
         if report_json:
             st.write("Informe (JSON)")
             st.json(report_json)
+
+    if tab_eval is not None:
+        with tab_eval:
+            st.write("Comparación contra ground truth del corpus (si existe).")
+            uploaded_names = st.session_state.get("uploaded_names") or []
+            pdf_filename = uploaded_names[0] if uploaded_names else None
+            render_ground_truth_evaluation(result=result, pdf_filename=pdf_filename, project_root=PROJECT_ROOT)
 
     st.subheader("JSON completo")
     st.code(json.dumps(result, ensure_ascii=False, indent=2), language="json")
