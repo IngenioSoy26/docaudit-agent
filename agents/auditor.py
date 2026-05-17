@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""
+Agente auditor: genera el informe final y evalúa reglas de decisión.
+
+Características:
+- Evalúa expresiones booleanas declaradas en YAML (reglas_decision) con un evaluador seguro basado en AST.
+- Soporta literales tipo YAML/JSON (true/false/null) y funciones utilitarias (abs/min/max/round/coalesce).
+- Produce informe JSON + Markdown y calcula un score de confianza.
+"""
+
 import ast
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -18,7 +27,20 @@ class RuleResult:
     error: str | None
 
 
-_ALLOWED_FUNCS: dict[str, Any] = {"abs": abs, "min": min, "max": max, "round": round}
+def coalesce(*args: Any) -> Any:
+    for a in args:
+        if a is not None:
+            return a
+    return None
+
+
+_ALLOWED_FUNCS: dict[str, Any] = {
+    "abs": abs,
+    "min": min,
+    "max": max,
+    "round": round,
+    "coalesce": coalesce,
+}
 
 
 def _is_empty(value: Any) -> bool:
@@ -45,9 +67,35 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
         if isinstance(node, ast.Name):
             if node.id in context:
                 return context[node.id]
+            low = node.id.lower()
+            if low == "true":
+                return True
+            if low == "false":
+                return False
+            if low in {"null", "none"}:
+                return None
             if node.id in _ALLOWED_FUNCS:
                 return _ALLOWED_FUNCS[node.id]
             raise ValueError(f"Nombre no permitido: {node.id}")
+
+        if isinstance(node, ast.List):
+            return [_eval(elt) for elt in node.elts]
+
+        if isinstance(node, ast.Tuple):
+            return tuple(_eval(elt) for elt in node.elts)
+
+        if isinstance(node, ast.Attribute):
+            value = _eval(node.value)
+            attr = node.attr
+            if attr == "days":
+                days = getattr(value, "days", None)
+                if isinstance(days, int):
+                    return days
+            if attr in {"year", "month", "day"}:
+                part = getattr(value, attr, None)
+                if isinstance(part, int):
+                    return part
+            raise ValueError("Acceso a atributo no permitido")
 
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub, ast.Not)):
             operand = _eval(node.operand)
@@ -95,6 +143,14 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
                     ok = left > right
                 elif isinstance(op, ast.GtE):
                     ok = left >= right
+                elif isinstance(op, ast.In):
+                    ok = left in right
+                elif isinstance(op, ast.NotIn):
+                    ok = left not in right
+                elif isinstance(op, ast.Is):
+                    ok = left is right
+                elif isinstance(op, ast.IsNot):
+                    ok = left is not right
                 else:
                     raise ValueError("Operador no permitido")
                 if not ok:
@@ -120,14 +176,36 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
 
 
 def _evaluate_decision_rules(schema: DocSchema, extracted: dict[str, Any]) -> list[RuleResult]:
-    context = dict(extracted)
-    context["fecha_actual"] = date.today().isoformat()
-    context["datetime_actual"] = datetime.now().isoformat()
+    context = _prepare_context(extracted)
+    context["fecha_actual"] = date.today()
+    context["datetime_actual"] = datetime.now()
 
     results: list[RuleResult] = []
     for rule in schema.decision_rules:
         results.append(_evaluate_one_rule(rule, context))
     return results
+
+
+def _prepare_context(extracted: dict[str, Any]) -> dict[str, Any]:
+    ctx: dict[str, Any] = dict(extracted)
+    for k, v in list(ctx.items()):
+        if not isinstance(v, str):
+            continue
+        s = v.strip()
+        if not s:
+            continue
+        if len(s) == 10 and s[4] == "-" and s[7] == "-":
+            try:
+                ctx[k] = date.fromisoformat(s)
+            except Exception:
+                pass
+            continue
+        if len(s) >= 19 and s[4] == "-" and s[7] == "-" and "T" in s:
+            try:
+                ctx[k] = datetime.fromisoformat(s)
+            except Exception:
+                pass
+    return ctx
 
 
 def _evaluate_one_rule(rule: DecisionRule, context: dict[str, Any]) -> RuleResult:

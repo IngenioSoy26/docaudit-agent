@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""
+Validación de campos extraídos contra un esquema.
+
+Aplica:
+- Required (campo requerido)
+- Tipos primitivos (string/number/integer/boolean/date/datetime)
+- Reglas declarativas por campo (min/max/regex/enum)
+
+Este módulo valida el resultado ya normalizado (ver core.normalizer).
+"""
+
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -222,6 +233,7 @@ def _check_rules(field: SchemaField, value: Any) -> list[ValidationIssue]:
 
 
 def validate_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[str, Any]:
+    """Valida campos y devuelve un resumen con `valid` e incidencias."""
     issues: list[ValidationIssue] = []
 
     for field in schema.fields:

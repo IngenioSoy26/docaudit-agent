@@ -1,0 +1,8 @@
+{
+    "id_documento": "HIP-0008",
+    "nombre_cliente": "Faustino Estrada Vilanova",
+    "dni_cliente": "64792043V",
+    "monto_prestamo_eur": 203683.17,
+    "tasa_interes": 3.14,
+    "fecha_emision": "2020-11-22"
+}

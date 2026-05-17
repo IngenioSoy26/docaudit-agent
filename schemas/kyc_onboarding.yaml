@@ -1,42 +1,56 @@
 caso_uso: kyc_onboarding
 version: "1.0"
 descripcion: >
-  Esquema para procesos KYC/onboarding. Integra documento de identidad y comprobante de domicilio,
-  con reglas mínimas de vigencia y formato.
+  Esquema para procesos KYC/onboarding basado en expediente de identidad. Incluye validaciones
+  de formato (DNI/NIE), mayoría de edad y vigencia del documento.
 
 documentos:
-  - tipo: DOCUMENTO_IDENTIDAD
-    descripcion: "DNI/NIE/Pasaporte"
+  - tipo: EXPEDIENTE_IDENTIDAD
+    descripcion: "Expediente de identidad + comprobante de domicilio"
     campos:
-      - nombre: tipo_documento
-        etiqueta: "Tipo de documento"
+      - nombre: nombre_titular
+        etiqueta: "Nombre del ciudadano"
         tipo_dato: string
         requerido: true
-        validacion:
-          valores_permitidos: ["DNI", "NIE", "PASAPORTE"]
-      - nombre: numero_documento
-        etiqueta: "Número de documento"
+      - nombre: primer_apellido
+        etiqueta: "Primer apellido del titular"
         tipo_dato: string
         requerido: true
-      - nombre: fecha_caducidad
-        etiqueta: "Fecha de caducidad"
+      - nombre: segundo_apellido
+        etiqueta: "Segundo apellido del titular"
+        tipo_dato: string
+        requerido: true
+      - nombre: num_documento
+        etiqueta: "Número de DNI o NIE"
+        tipo_dato: string
+        requerido: true
+        patron: "^[XYZ0-9][0-9]{7}[A-Z]$"
+      - nombre: fecha_nacimiento
+        etiqueta: "Fecha de nacimiento del titular"
         tipo_dato: date
         requerido: true
-
-  - tipo: JUSTIFICANTE_DOMICILIO
-    descripcion: "Recibo/empadronamiento"
-    campos:
-      - nombre: codigo_postal
-        etiqueta: "Código postal"
+      - nombre: fecha_caducidad
+        etiqueta: "Fecha de caducidad del documento"
+        tipo_dato: date
+        requerido: true
+      - nombre: domicilio_comprobante
+        etiqueta: "Dirección postal del comprobante"
         tipo_dato: string
         requerido: true
-        patron: "^[0-9]{5}$"
 
 reglas_decision:
   - id: RK01
+    descripcion: "Mayoría de edad (>= 18)"
+    expresion: "(fecha_actual - fecha_nacimiento).days / 365.25 >= 18"
+    severidad: critica
+  - id: RK02
     descripcion: "Documento de identidad no caducado"
     expresion: "fecha_caducidad > fecha_actual"
     severidad: critica
+  - id: RK03
+    descripcion: "Documento no marcado como 'No encontrado'"
+    expresion: "num_documento != 'No encontrado'"
+    severidad: advertencia
 
 informe:
   formato: ["json", "markdown"]

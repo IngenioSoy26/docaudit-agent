@@ -5,6 +5,47 @@ descripcion: >
   procesar documentos de soporte (p.ej. extractos bancarios) con reglas de decisión.
 
 documentos:
+  - tipo: ESCRITURA_PRESTAMO_HIPOTECARIO
+    descripcion: "Contrato/escritura de préstamo hipotecario"
+    campos:
+      - nombre: nombre_prestatario
+        etiqueta: "Nombre y apellidos del prestatario / deudor"
+        tipo_dato: string
+        requerido: true
+      - nombre: dni_prestatario
+        etiqueta: "Documento Nacional de Identidad (DNI) o NIE"
+        tipo_dato: string
+        patron: "^[XYZ0-9][0-9]{7}[A-Z]$"
+        requerido: true
+      - nombre: entidad_financiera
+        etiqueta: "Entidad prestamista / Banco"
+        tipo_dato: string
+        requerido: true
+      - nombre: capital_prestamo
+        etiqueta: "Capital principal del préstamo concedido"
+        tipo_dato: float
+        requerido: true
+        validacion:
+          rango_min: 0.0
+      - nombre: tasa_interes_nominal
+        etiqueta: "Tipo de Interés Nominal (TIN) aplicable"
+        tipo_dato: float
+        requerido: true
+        validacion:
+          rango_min: 0.0
+      - nombre: plazo_amortizacion_anos
+        etiqueta: "Plazo total pactado para la devolución (en años)"
+        tipo_dato: int
+        requerido: true
+        validacion:
+          rango_min: 1
+      - nombre: comision_apertura
+        etiqueta: "Comisión de apertura calculada sobre el capital"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+
   - tipo: IRPF
     descripcion: "Declaración IRPF del solicitante"
     campos:
@@ -61,6 +102,18 @@ documentos:
           rango_min: 0.0
 
 reglas_decision:
+  - id: H01
+    descripcion: "Límite de comisión de apertura (<= 2% del capital)"
+    expresion: "coalesce(comision_apertura, 0) <= (capital_prestamo * 0.02)"
+    severidad: advertencia
+  - id: H02
+    descripcion: "TIN en rango comercial (0-15%)"
+    expresion: "tasa_interes_nominal > 0.00 and tasa_interes_nominal <= 15.00"
+    severidad: advertencia
+  - id: H03
+    descripcion: "Plazo máximo de amortización (<= 30 años)"
+    expresion: "plazo_amortizacion_anos > 0 and plazo_amortizacion_anos <= 30"
+    severidad: advertencia
   - id: R01
     descripcion: "Renta anual mínima"
     expresion: "base_imponible_general >= 24000"

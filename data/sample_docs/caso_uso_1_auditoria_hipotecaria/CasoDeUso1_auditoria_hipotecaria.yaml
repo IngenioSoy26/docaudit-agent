@@ -1,0 +1,42 @@
+caso_uso: auditoria_hipotecaria
+version: "1.0"
+documentos:
+  tipo: ESCRITURA_PRESTAMO_HIPOTECARIO
+  campos:
+    - nombre: nombre_prestatario
+      etiqueta: "Nombre y apellidos del prestatario / deudor"
+      tipo_dato: string
+      requerido: true
+    - nombre: dni_prestatario
+      etiqueta: "Documento Nacional de Identidad (DNI) o NIE"
+      tipo_dato: string
+      patron: "^[XYZ0-9][0-9]{7}[A-Z]$" # Validación de patrón oficial español
+      requerido: true
+    - nombre: entidad_financiera
+      etiqueta: "Entidad prestamista / Banco"
+      tipo_dato: string
+      requerido: true
+    - nombre: capital_prestamo
+      etiqueta: "Capital principal del préstamo concedido"
+      tipo_dato: float
+      requerido: true
+    - nombre: tasa_interes_nominal
+      etiqueta: "Tipo de Interés Nominal (TIN) aplicable"
+      tipo_dato: float
+      requerido: true
+    - nombre: plazo_amortizacion_anos
+      etiqueta: "Plazo total pactado para la devolución (en años)"
+      tipo_dato: int
+      requerido: true
+    - nombre: comision_apertura
+      etiqueta: "Comisión de apertura calculada sobre el capital"
+      tipo_dato: float
+      requerido: false
+
+reglas_decision:
+  - descripcion: "Validación de límites de comisiones según Ley 5/2019 (LCCI)"
+    expresion: "coalesce(comision_apertura, 0) <= (capital_prestamo * 0.02)"
+  - descripcion: "Control de coherencia en tasas de interés comercial estándar"
+    expresion: "tasa_interes_nominal > 0.00 and tasa_interes_nominal <= 15.00"
+  - descripcion: "Validación de plazos máximos de amortización en el mercado español"
+    expresion: "plazo_amortizacion_anos > 0 and plazo_amortizacion_anos <= 30"

@@ -1,0 +1,8 @@
+{
+    "id_documento": "HIP-0003",
+    "nombre_cliente": "Diego Gisbert Pujol",
+    "dni_cliente": "81208089W",
+    "monto_prestamo_eur": 324916.32,
+    "tasa_interes": 5.49,
+    "fecha_emision": "2022-07-11"
+}

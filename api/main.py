@@ -1,3 +1,12 @@
+"""
+API HTTP (FastAPI) para ejecutar DocAudit Agent.
+
+Endpoints:
+- GET /health: healthcheck
+- POST /extract: ejecuta pipeline sobre texto
+- POST /extract_pdf: recibe PDF y ejecuta extracción de texto (auto/vision) + pipeline
+"""
+
 from typing import Any
 
 import hashlib

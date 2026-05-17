@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+"""
+Carga de esquemas YAML.
+
+Soporta:
+- Formato simple (MVP): {name, version, fields, ...}
+- Formato extendido (empresa): {caso_uso, documentos:[{tipo, campos:[...]}], reglas_decision, informe}
+
+Además, tolera codificaciones típicas en Windows (cp1252/latin-1) en YAMLs externos.
+"""
+
 from pathlib import Path
 
 import yaml
@@ -8,8 +18,21 @@ from core.schema_models import DecisionRule, DocSchema, FieldRule, ReportConfig,
 
 
 def load_schema(schema_path: str | Path) -> DocSchema:
+    """Carga un esquema desde disco y lo valida contra los modelos Pydantic."""
     path = Path(schema_path)
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        data = path.read_bytes()
+        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+            try:
+                text = data.decode(enc)
+                break
+            except Exception:
+                text = ""
+        if not text:
+            raise
+    raw = yaml.safe_load(text)
     if isinstance(raw, dict) and "caso_uso" in raw:
         return _load_new_format(raw)
     return DocSchema.model_validate(raw)
@@ -73,6 +96,8 @@ def _load_new_format(raw: dict) -> DocSchema:
     fields: list[SchemaField] = []
 
     documentos = raw.get("documentos") or []
+    if isinstance(documentos, dict):
+        documentos = [documentos]
     if isinstance(documentos, list):
         for doc in documentos:
             if not isinstance(doc, dict):

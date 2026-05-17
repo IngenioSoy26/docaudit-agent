@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""
+Normalización de campos extraídos.
+
+Convierte salidas del LLM a formatos consistentes antes de validar:
+- Trim de strings, conversión de \"null/none/n-a\" a None
+- Números con formato local (miles/decimales) a float/int
+- Fechas a ISO (YYYY-MM-DD) y datetimes a ISO
+- Booleans desde variantes (si/sí/no, 0/1, true/false)
+- Ajustes de enums (cuando el schema define valores_permitidos)
+"""
+
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -221,6 +232,7 @@ def _normalize_field(field: SchemaField, value: Any) -> tuple[Any, list[Normaliz
 
 
 def normalize_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[str, Any]:
+    """Normaliza un dict de campos según el tipo y reglas declaradas del esquema."""
     normalized: dict[str, Any] = dict(extracted)
     changes: list[NormalizationChange] = []
 

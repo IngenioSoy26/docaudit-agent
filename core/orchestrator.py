@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""
+Orquestación del pipeline DocAudit Agent.
+
+Este módulo define dos modos de ejecución:
+- run_pipeline: procesa un único texto/PDF ya convertido a texto.
+- run_expediente: procesa múltiples documentos (expediente), fusiona campos y evalúa reglas con contexto agregado.
+
+El grafo principal está implementado con LangGraph como un pipeline dirigido con estado compartido:
+clasificador → extractor → normalizador → validador → auditor.
+"""
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypedDict
@@ -43,6 +54,25 @@ def _infer_document_type(schema: DocSchema, text: str) -> str | None:
                 return dt
         return None
 
+    hit = _pick(
+        triggers=[
+            "escritura",
+            "préstamo hipotecario",
+            "prestamo hipotecario",
+            "capital del préstamo",
+            "capital del prestamo",
+            "tipo de interés nominal",
+            "tipo de interes nominal",
+            "tin",
+            "plazo de amortización",
+            "plazo de amortizacion",
+            "cláusula",
+            "clausula",
+        ],
+        type_hints=["escritura", "hipotec"],
+    )
+    if hit:
+        return hit
     hit = _pick(
         triggers=["cirbe", "incidencias", "riesgos", "deuda vigente", "deuda_vigente"],
         type_hints=["cirbe"],
@@ -163,4 +193,142 @@ def run_pipeline(
         "normalization": normalization,
         "validation": final_state["validation"],
         "report": final_state.get("report", {}),
+    }
+
+
+def _coerce_extraction_payload(payload: Any) -> tuple[dict[str, Any], dict[str, Any], Any]:
+    if isinstance(payload, dict) and "fields" in payload and "details" in payload:
+        fields = payload.get("fields") or {}
+        details = payload.get("details") or {}
+        if isinstance(fields, dict) and isinstance(details, dict):
+            return fields, details, payload
+    if isinstance(payload, dict):
+        return payload, {}, payload
+    return {}, {}, payload
+
+
+def _choose_schema_for_expediente(texts: list[str]) -> str:
+    combined = "\n".join(t for t in texts if isinstance(t, str) and t.strip())
+    t = combined.lower()
+    hipotecario_signals = [
+        "hipoteca",
+        "hipotecario",
+        "irpf",
+        "modelo 100",
+        "cirbe",
+        "incidencias",
+        "nota simple",
+        "registro de la propiedad",
+        "préstamo",
+        "prestamo",
+    ]
+    if any(s in t for s in hipotecario_signals):
+        return "credito_hipotecario"
+    return classify_text(combined)
+
+
+def _pick_better_detail(existing: dict[str, Any] | None, incoming: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(incoming, dict):
+        return existing
+    if not isinstance(existing, dict):
+        return incoming
+    ec = existing.get("confianza")
+    ic = incoming.get("confianza")
+    if isinstance(ic, (int, float)) and isinstance(ec, (int, float)):
+        return incoming if float(ic) > float(ec) else existing
+    if isinstance(ic, (int, float)) and ec is None:
+        return incoming
+    return existing
+
+
+def run_expediente(
+    texts: list[str],
+    schemas_dir: str | Path = "schemas",
+    pages_by_doc: list[list[str] | None] | None = None,
+    doc_ids: list[str | None] | None = None,
+    schema_name: str | None = None,
+) -> dict[str, Any]:
+    if not texts:
+        raise ValueError("texts no puede estar vacío")
+
+    schemas_dir_path = Path(schemas_dir)
+    chosen_schema = schema_name or _choose_schema_for_expediente(texts)
+    schema_path = schemas_dir_path / f"{chosen_schema}.yaml"
+    schema = load_schema(schema_path)
+
+    per_doc: list[dict[str, Any]] = []
+    merged_fields: dict[str, Any] = {}
+    merged_details: dict[str, Any] = {}
+    present_types: list[str] = []
+
+    for i, text in enumerate(texts):
+        pages = pages_by_doc[i] if isinstance(pages_by_doc, list) and i < len(pages_by_doc) else None
+        doc_id = doc_ids[i] if isinstance(doc_ids, list) and i < len(doc_ids) else None
+
+        inferred = _infer_document_type(schema, text)
+        if isinstance(inferred, str) and inferred and inferred not in present_types:
+            present_types.append(inferred)
+        doc_schema = schema
+        if inferred and any(getattr(f, "document_type", None) for f in schema.fields):
+            filtered_fields = [f for f in schema.fields if f.document_type == inferred]
+            if filtered_fields:
+                doc_schema = schema.model_copy(update={"fields": filtered_fields, "document_types": [inferred]})
+
+        extracted_payload = extract_from_text(text, doc_schema, pages=pages, doc_id=doc_id)
+        fields, details, extracted_raw = _coerce_extraction_payload(extracted_payload)
+
+        for k, v in fields.items():
+            if v is None and k in merged_fields and merged_fields[k] is not None:
+                continue
+            if k not in merged_fields or merged_fields[k] is None:
+                merged_fields[k] = v
+                if k in details:
+                    merged_details[k] = details.get(k)
+                continue
+            if k in details and isinstance(details.get(k), dict):
+                best = _pick_better_detail(
+                    merged_details.get(k) if isinstance(merged_details.get(k), dict) else None,
+                    details.get(k),
+                )
+                if best is details.get(k):
+                    merged_fields[k] = v
+                    merged_details[k] = best
+
+        per_doc.append(
+            {
+                "doc_index": i,
+                "doc_id": doc_id,
+                "document_type": inferred,
+                "schema": {"name": doc_schema.name, "version": doc_schema.version, "document_types": doc_schema.document_types},
+                "extracted_raw": extracted_raw,
+                "extracted": fields,
+            }
+        )
+
+    expediente_schema = schema
+    if present_types and any(getattr(f, "document_type", None) for f in schema.fields):
+        expediente_fields = [f for f in schema.fields if f.document_type in present_types or f.document_type is None]
+        if expediente_fields:
+            expediente_schema = schema.model_copy(update={"fields": expediente_fields, "document_types": present_types})
+
+    for f in expediente_schema.fields:
+        merged_fields.setdefault(f.name, None)
+        merged_details.setdefault(
+            f.name,
+            {"nombre": f.name, "valor": merged_fields.get(f.name), "confianza": None, "evidencia_textual": "", "pagina": 1},
+        )
+
+    normalization = normalize_extracted(merged_fields, expediente_schema)
+    normalized = normalization["normalized"]
+    validation = validate_extracted(normalized, expediente_schema)
+    report = audit_document(expediente_schema, normalized, validation, field_details=merged_details)
+
+    return {
+        "schema": {"name": expediente_schema.name, "version": expediente_schema.version},
+        "documents": per_doc,
+        "extracted_raw": {"merged": merged_fields, "per_document": per_doc},
+        "extracted": normalized,
+        "normalization": normalization,
+        "validation": validation,
+        "report": report,
     }

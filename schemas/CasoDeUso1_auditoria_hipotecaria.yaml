@@ -1,0 +1,94 @@
+caso_uso: auditoria_hipotecaria
+version: "1.0"
+documentos:
+  tipo: ESCRITURA_PRESTAMO_HIPOTECARIO
+  campos:
+    - nombre: nombres_prestatario
+      etiqueta: "Nombres del prestatario / deudor"
+      tipo_dato: string
+      requerido: true
+    - nombre: apellidos_prestatario
+      etiqueta: "Apellidos del prestatario / deudor"
+      tipo_dato: string
+      requerido: true
+    - nombre: dni_prestatario
+      etiqueta: "Documento Nacional de Identidad (DNI) o NIE"
+      tipo_dato: string
+      patron: "^[XYZ0-9][0-9]{7}[A-Z]$" # Validacion de patron oficial español
+      requerido: true
+    - nombre: direccion_prestatario
+      etiqueta: "Dirección del prestatario / deudor"
+      tipo_dato: string
+      requerido: true
+    - nombre: telefono_prestatario
+      etiqueta: "Telefono del prestatario / deudor"
+      tipo_dato: string
+      requerido: true
+    - nombre: correo_prestatario
+      etiqueta: "Correo del prestatario / deudor"
+      tipo_dato: string
+      requerido: true
+    - nombre: entidad_financiera
+      etiqueta: "Entidad prestamista / Banco"
+      tipo_dato: string
+      requerido: true
+    - nombre: capital_prestamo
+      etiqueta: "Capital principal del prestamo concedido"
+      tipo_dato: float
+      requerido: true
+    - nombre: tasa_interes_nominal
+      etiqueta: "Tipo de Interes Nominal (TIN) aplicable"
+      tipo_dato: float
+      requerido: true
+    - nombre: plazo_amortizacion_anos
+      etiqueta: "Plazo total pactado para la devolucion (en años)"
+      tipo_dato: int
+      requerido: true
+    - nombre: comision_apertura
+      etiqueta: "Comision de apertura calculada sobre el capital"
+      tipo_dato: float
+      requerido: false
+    - nombre: valor_inmueble
+      tipo_dato: float
+      requerido: true
+    - nombre: monto_solicitado
+      tipo_dato: float
+      requerido: true
+    - nombre: cuota_mensual_hipoteca
+      tipo_dato: float
+      requerido: true
+    - nombre: deudas_mensuales
+      tipo_dato: float
+      requerido: false
+    - nombre: contrato_indefinido
+      tipo_dato: boolean
+      requerido: false
+    - nombre: antiguedad_laboral_meses
+      tipo_dato: integer
+      requerido: false
+    - nombre: riesgo
+      tipo_dato: string
+      requerido: false
+    - nombre: aprobacion_humana
+      tipo_dato: boolean
+      requerido: false
+
+reglas_decision:
+  - descripcion: "Validacion de limites de comisiones segun Ley 5/2019 (LCCI)"
+    expresion: "coalesce(comision_apertura, 0) <= (capital_prestamo * 0.02)"
+  - descripcion: "Control de coherencia en tasas de interes comercial estandar"
+    expresion: "tasa_interes_nominal > 0.00 and tasa_interes_nominal <= 15.00"
+  - descripcion: "Validacion de plazos maximos de amortizacion en el mercado español"
+    expresion: "plazo_amortizacion_anos > 0 and plazo_amortizacion_anos <= 30"
+  - descripcion: "Loan-to-Value (LTV) no debe superar 80%"
+    expresion: "monto_solicitado / valor_inmueble <= 0.80"
+  - descripcion: "Debt-to-Income (DTI) no debe superar 40%"
+    expresion: "(cuota_mensual_hipoteca + coalesce(deudas_mensuales, 0)) / ingresos_mensuales <= 0.40"
+  - descripcion: "Capacidad de pago neta positiva"
+    expresion: "ingresos_mensuales - (cuota_mensual_hipoteca + coalesce(deudas_mensuales, 0)) > 0"
+  - descripcion: "Contrato indefinido o antigüedad laboral mínima de 12 meses"
+    expresion: "contrato_indefinido == true or antiguedad_laboral_meses >= 12"
+  - descripcion: "Ingresos anuales coherentes con extractos"
+    expresion: "ingresos_anuales is null or ingresos_anuales >= suma_ingresos_extractos * 0.8"
+  - descripcion: "Operación de alto riesgo requiere revisión humana"
+    expresion: "not(riesgo == 'alto' and aprobacion_humana == false)"

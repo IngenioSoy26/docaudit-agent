@@ -15,15 +15,18 @@ def test_load_schema_new_format_has_rules_and_report():
 def test_auditor_evaluates_decision_rule():
     schema = load_schema("schemas/kyc_onboarding.yaml")
     extracted = {
-        "tipo_documento": "DNI",
-        "numero_documento": "12345678Z",
+        "nombre_titular": "Juan",
+        "primer_apellido": "Pérez",
+        "segundo_apellido": "García",
+        "num_documento": "12345678Z",
+        "fecha_nacimiento": "1990-01-01",
         "fecha_caducidad": "2099-01-01",
-        "codigo_postal": "28001",
+        "domicilio_comprobante": "Calle Ejemplo 1, Madrid, 28001",
     }
     validation = validate_extracted(extracted, schema)
     report = audit_document(schema, extracted, validation)
     rules = report["json"]["decision_rules"]
-    assert rules[0]["cumple"] is True
+    assert all(r["cumple"] is True for r in rules)
 
 
 def test_orchestrator_runs_without_llm(monkeypatch):
@@ -35,12 +38,15 @@ def test_orchestrator_runs_without_llm(monkeypatch):
         orchestrator,
         "extract_from_text",
         lambda _text, _schema, pages=None, doc_id=None: {
-            "numero_factura": "F-001",
+            "razon_social_emisor": "Proveedor Demo S.L.",
+            "nif_emisor": "A1234567B",
+            "num_factura": "F-001",
+            "fecha_expedicion": "2026-01-15",
             "base_imponible": 100.0,
-            "tipo_iva": 21.0,
+            "tipo_iva": 21,
             "cuota_iva": 21.0,
-            "base_iva_devengado": 100.0,
-            "cuota_iva_devengado": 21.0,
+            "retencion_irpf": None,
+            "importe_total": 121.0,
         },
     )
 
@@ -91,6 +97,50 @@ def test_credito_hipotecario_rules_evaluable_with_complete_context():
     validation = validate_extracted(extracted, schema)
     report = audit_document(schema, extracted, validation)
     rules = {r["id"]: r for r in report["json"]["decision_rules"]}
+    assert rules["R01"]["cumple"] is True
+    assert rules["R02"]["cumple"] is True
+    assert rules["R03"]["cumple"] is True
+
+
+def test_run_expediente_merges_multi_document_into_one_decision(monkeypatch):
+    import core.orchestrator as orchestrator
+
+    def fake_extract(text, schema, pages=None, doc_id=None):
+        values_by_field = {
+            "base_imponible_general": 30000.0,
+            "cuota_liquida_estatal": 2500.0,
+            "nif_emisor": "B12345678",
+            "importe_total_iva": 121.0,
+            "deuda_vigente": 9000.0,
+            "incidencias_activas": False,
+            "total_gastos_mensuales": 700.0,
+        }
+        fields = {f.name: values_by_field.get(f.name) for f in schema.fields}
+        details = {
+            f.name: {
+                "nombre": f.name,
+                "valor": fields[f.name],
+                "confianza": 0.9 if fields[f.name] is not None else None,
+                "evidencia_textual": "",
+                "pagina": 1,
+            }
+            for f in schema.fields
+        }
+        return {"fields": fields, "details": details}
+
+    monkeypatch.setattr(orchestrator, "extract_from_text", fake_extract)
+
+    result = orchestrator.run_expediente(
+        [
+            "IRPF modelo 100 casilla 435",
+            "Factura con IVA",
+            "CIRBE incidencias y deuda vigente",
+        ],
+        schema_name="credito_hipotecario",
+    )
+
+    assert result["validation"]["valid"] is True
+    rules = {r["id"]: r for r in result["report"]["json"]["decision_rules"]}
     assert rules["R01"]["cumple"] is True
     assert rules["R02"]["cumple"] is True
     assert rules["R03"]["cumple"] is True

@@ -1,3 +1,11 @@
+"""
+Factory de clientes LLM (LangChain + Ollama).
+
+Centraliza la creación de modelos para:
+- extracción (formato JSON)
+- clasificación
+"""
+
 from langchain_ollama import ChatOllama
 
 from core.settings import settings

@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+RAG (retrieval) para evidencias por campo.
+
+Este módulo construye chunks del documento, genera embeddings con Ollama y recupera el
+fragmento más relevante para cada campo extraído, almacenando el índice en ChromaDB.
+"""
+
 from dataclasses import dataclass
 from typing import Any
 import hashlib

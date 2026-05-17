@@ -15,5 +15,4 @@ venv/
 Thumbs.db
 
 # Data
-data/sample_docs/*
-!data/sample_docs/.gitkeep
+# Se versiona el corpus de prueba anonimizado bajo data/sample_docs/ según la propuesta técnica.

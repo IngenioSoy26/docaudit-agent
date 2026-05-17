@@ -1,3 +1,9 @@
+"""
+Configuración central (Pydantic Settings).
+
+Las variables se leen desde entorno o desde un archivo .env en la raíz del repositorio.
+"""
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

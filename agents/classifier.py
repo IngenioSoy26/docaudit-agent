@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+Agente clasificador: selecciona el caso de uso (schema) más probable para un texto.
+
+Primero usa heurísticas por palabras clave para velocidad y robustez.
+Si no hay señales claras, usa un LLM local para escoger entre los esquemas disponibles.
+"""
+
 import re
 
 from core.llm import get_classifier_llm

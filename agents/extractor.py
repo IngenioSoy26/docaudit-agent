@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""
+Agente extractor: extrae campos estructurados a partir de texto.
+
+Estrategia:
+- Usa un LLM local (Ollama) para devolver una lista JSON de campos (nombre/valor/confianza/página).
+- Post-procesa respuestas “sucias” (comentarios, comas finales, números malformados).
+- Completa evidencias por campo con RAG (Chroma) a partir de chunks del documento.
+
+Nota: la ruta de visión/OCR se ejecuta antes del grafo (document_loader) para convertir PDFs escaneados a texto.
+"""
+
 import ast
 import json
 import re

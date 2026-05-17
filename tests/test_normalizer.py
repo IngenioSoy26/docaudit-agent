@@ -19,10 +19,10 @@ def test_normalize_date_and_number():
 
 
 def test_normalize_enum_tipo_documento_from_noisy_string():
-    schema = load_schema("schemas/kyc_onboarding.yaml")
-    extracted = {"tipo_documento": "DNI 36389218D"}
+    schema = load_schema("schemas/auditoria_fiscal.yaml")
+    extracted = {"tipo_iva": "21"}
     result = normalize_extracted(extracted, schema)
-    assert result["normalized"]["tipo_documento"] == "DNI"
+    assert result["normalized"]["tipo_iva"] == 21
 
 
 def test_normalize_null_string_to_none():
@@ -34,6 +34,6 @@ def test_normalize_null_string_to_none():
 
 def test_infer_tipo_documento_from_numero_documento():
     schema = load_schema("schemas/kyc_onboarding.yaml")
-    extracted = {"tipo_documento": "string", "numero_documento": "36389218D"}
+    extracted = {"fecha_nacimiento": "08/12/1992"}
     result = normalize_extracted(extracted, schema)
-    assert result["normalized"]["tipo_documento"] == "DNI"
+    assert result["normalized"]["fecha_nacimiento"] == "1992-12-08"

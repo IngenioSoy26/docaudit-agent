@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+"""
+Carga de documentos (PDF) y extracción de texto.
+
+Soporta dos rutas:
+- PDF nativo: extrae texto embebido (Docling si está instalado; fallback a PyPDF).
+- PDF escaneado: extrae imágenes y transcribe con un modelo de visión en Ollama (Qwen2.5-VL).
+
+La salida se devuelve como {text, pages, page_texts, ...} para alimentar el grafo de agentes.
+"""
+
 import io
 import tempfile
 from typing import Any

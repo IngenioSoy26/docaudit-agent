@@ -1,55 +1,70 @@
 caso_uso: auditoria_fiscal
 version: "1.0"
 descripcion: >
-  Esquema para verificación documental en auditorías fiscales. Integra facturas y modelo 303,
-  con reglas de coherencia básicas.
+  Esquema para verificación documental de facturas de proveedor (AEAT). Incluye validaciones
+  básicas y reglas de coherencia matemática del IVA.
 
 documentos:
-  - tipo: FACTURA
-    descripcion: "Factura emitida o recibida"
+  - tipo: FACTURA_PROVEEDOR
+    descripcion: "Factura de proveedor"
     campos:
-      - nombre: numero_factura
-        etiqueta: "Número de factura"
+      - nombre: razon_social_emisor
+        etiqueta: "Denominación social del emisor"
         tipo_dato: string
         requerido: true
+      - nombre: nif_emisor
+        etiqueta: "Número de Identificación Fiscal (NIF)"
+        tipo_dato: string
+        requerido: true
+        patron: "^[A-HJNP-SUW][0-9]{7}[0-9A-J]$"
+      - nombre: num_factura
+        etiqueta: "Número de factura y, en su caso, serie"
+        tipo_dato: string
+        requerido: true
+      - nombre: fecha_expedicion
+        etiqueta: "Fecha de expedición de la factura"
+        tipo_dato: date
+        requerido: true
       - nombre: base_imponible
-        etiqueta: "Base imponible"
+        etiqueta: "Base imponible de la operación"
         tipo_dato: float
         requerido: true
         validacion:
           rango_min: 0.0
       - nombre: tipo_iva
-        etiqueta: "Tipo IVA (%)"
-        tipo_dato: float
+        etiqueta: "Tipo impositivo del IVA aplicado (porcentaje)"
+        tipo_dato: int
         requerido: true
         validacion:
           valores_permitidos: [0, 4, 10, 21]
       - nombre: cuota_iva
-        etiqueta: "Cuota IVA"
+        etiqueta: "Cuota tributaria repercutida"
         tipo_dato: float
         requerido: true
-
-  - tipo: MODELO_303
-    descripcion: "Declaración trimestral IVA (Modelo 303)"
-    campos:
-      - nombre: base_iva_devengado
-        etiqueta: "Base IVA devengado"
+      - nombre: retencion_irpf
+        etiqueta: "Retención IRPF (si aplica)"
         tipo_dato: float
         requerido: false
-        validacion:
-          rango_min: 0.0
-      - nombre: cuota_iva_devengado
-        etiqueta: "Cuota IVA devengado"
+      - nombre: importe_total
+        etiqueta: "Importe total a pagar"
         tipo_dato: float
-        requerido: false
+        requerido: true
         validacion:
           rango_min: 0.0
 
 reglas_decision:
   - id: RF01
-    descripcion: "Cuota IVA coherente con base y tipo"
-    expresion: "abs((base_imponible * (tipo_iva / 100)) - cuota_iva) <= 0.02 * max(1, cuota_iva)"
+    descripcion: "Validación matemática del IVA"
+    expresion: "abs(cuota_iva - (base_imponible * (tipo_iva / 100))) <= 0.05"
     severidad: advertencia
+  - id: RF02
+    descripcion: "Consistencia del importe total facturado"
+    expresion: "abs(importe_total - (base_imponible + cuota_iva - coalesce(retencion_irpf, 0))) <= 0.05"
+    severidad: advertencia
+  - id: RF03
+    descripcion: "Tipos de IVA legales"
+    expresion: "tipo_iva in [21, 10, 4, 0]"
+    severidad: critica
 
 informe:
   formato: ["json", "markdown"]
