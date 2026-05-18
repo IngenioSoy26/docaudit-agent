@@ -1,0 +1,17 @@
+DocAudit Agent — Documentación técnica mínima
+
+Arquitectura:
+- core/orchestrator.py: grafo LangGraph (classifier → extractor → normalizer → validator → auditor)
+- agents/classifier.py: selección de esquema (heurísticas + LLM)
+- agents/extractor.py: extracción estructurada (LLM) + evidencia RAG (ChromaDB)
+- core/normalizer.py: normalización de formatos/tipos
+- core/validator.py: validación declarativa (required/min/max/regex/enum)
+- agents/auditor.py: evaluación de reglas y generación de informe (JSON + Markdown)
+
+Interfaces:
+- api/main.py: API FastAPI (incluye /upload, /process, /report/{doc_id})
+- ui/app.py: UI Streamlit (carga documentos, editor YAML, visualización y evaluación)
+
+Datos:
+- data/sample_docs/: corpus de prueba (PDF + ground truth JSON) por caso de uso
+

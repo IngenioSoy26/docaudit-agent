@@ -1,3 +1,11 @@
+"""Tests de normalización.
+
+Verifica conversiones típicas:
+- fechas (DD/MM/YYYY -> ISO),
+- importes locales con separadores,
+- booleans/null en strings.
+"""
+
 from core.normalizer import normalize_extracted
 from core.schema_loader import load_schema
 

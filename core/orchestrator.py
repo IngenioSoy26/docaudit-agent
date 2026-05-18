@@ -19,12 +19,20 @@ from agents.auditor import audit_document
 from agents.classifier import classify_text
 from agents.extractor import extract_from_text
 from core.normalizer import normalize_extracted
+from core.privacy import redact_pii
 from core.schema_loader import load_schema
 from core.schema_models import DocSchema
+from core.settings import settings
 from core.validator import validate_extracted
 
 
 class PipelineState(TypedDict, total=False):
+    """Estado compartido entre nodos del grafo.
+
+    Cada nodo del pipeline añade/actualiza claves en este estado. El uso de TypedDict
+    facilita trazabilidad y reduce errores de integración entre agentes.
+    """
+
     text: str
     pages: list[str]
     doc_id: str
@@ -40,6 +48,18 @@ class PipelineState(TypedDict, total=False):
 
 
 def _infer_document_type(schema: DocSchema, text: str) -> str | None:
+    """Infere el tipo documental más probable dentro de un esquema multi-documento.
+
+    Esta función permite filtrar campos cuando el esquema define `document_types` y
+    cada campo incluye `document_type`. Se usan heurísticas rápidas por palabras clave.
+
+    Args:
+        schema: Esquema con posibles tipos documentales.
+        text: Texto del documento.
+
+    Returns:
+        El tipo documental inferido o None si no aplica.
+    """
     if not schema.document_types:
         return None
     t = (text or "").lower()
@@ -102,23 +122,32 @@ def _infer_document_type(schema: DocSchema, text: str) -> str | None:
 
 @lru_cache(maxsize=8)
 def _build_graph() -> Any:
+    """Construye y compila el grafo LangGraph del pipeline.
+
+    Se cachea para evitar reconstruir el grafo en cada ejecución.
+    """
     from langgraph.graph import END, StateGraph
 
     graph: StateGraph[PipelineState] = StateGraph(PipelineState)
 
     def node_classify(state: PipelineState) -> PipelineState:
+        """Selecciona el schema_name a partir del texto."""
         return {"schema_name": classify_text(state["text"])}
 
     def node_extract(state: PipelineState) -> PipelineState:
+        """Carga esquema, filtra por tipo documental (si aplica) y extrae campos con el LLM."""
         schemas_dir = Path(state.get("schemas_dir") or "schemas")
         schema_name = state["schema_name"]
         schema_path = schemas_dir / f"{schema_name}.yaml"
         schema = load_schema(schema_path)
         inferred = _infer_document_type(schema, state["text"])
         if inferred and any(getattr(f, "document_type", None) for f in schema.fields):
+            # Si el esquema está segmentado por tipo, extrae solo los campos del tipo inferido.
             filtered_fields = [f for f in schema.fields if f.document_type == inferred]
             if filtered_fields:
-                schema = schema.model_copy(update={"fields": filtered_fields, "document_types": [inferred]})
+                schema = schema.model_copy(
+                    update={"fields": filtered_fields, "document_types": [inferred]}
+                )
         extracted_raw = extract_from_text(
             state["text"],
             schema,
@@ -136,16 +165,19 @@ def _build_graph() -> Any:
         return {"schema": schema, "extracted_raw": extracted_raw, "extracted": extracted_raw}
 
     def node_normalize(state: PipelineState) -> PipelineState:
+        """Normaliza formatos (números/fechas/booleans) antes de validar."""
         schema = state["schema"]
         normalization = normalize_extracted(state["extracted"], schema)
         return {"normalization": normalization, "extracted": normalization["normalized"]}
 
     def node_validate(state: PipelineState) -> PipelineState:
+        """Valida campos normalizados según reglas declarativas del esquema."""
         schema = state["schema"]
         validation = validate_extracted(state["extracted"], schema)
         return {"validation": validation}
 
     def node_audit(state: PipelineState) -> PipelineState:
+        """Evalúa reglas de decisión y compone el informe final."""
         schema = state["schema"]
         report = audit_document(
             schema,
@@ -177,6 +209,22 @@ def run_pipeline(
     pages: list[str] | None = None,
     doc_id: str | None = None,
 ) -> dict[str, Any]:
+    """Ejecuta el pipeline completo sobre un único documento (texto).
+
+    Args:
+        text: Texto del documento (ya extraído del PDF).
+        schemas_dir: Directorio donde residen los YAML.
+        pages: Texto por página si está disponible (mejora evidencias RAG).
+        doc_id: Identificador del documento para persistencia de RAG.
+
+    Returns:
+        Resultado completo del pipeline (extracción, normalización, validación, auditoría).
+    """
+    if settings.enable_pii_redaction:
+        text, _ = redact_pii(text)
+        if pages:
+            pages = [redact_pii(p)[0] for p in pages]
+
     app = _build_graph()
     state: PipelineState = {"text": text, "schemas_dir": str(schemas_dir)}
     if pages:
@@ -197,6 +245,12 @@ def run_pipeline(
 
 
 def _coerce_extraction_payload(payload: Any) -> tuple[dict[str, Any], dict[str, Any], Any]:
+    """Normaliza la salida del extractor a una forma consistente (fields/details).
+
+    El extractor puede devolver:
+    - {"fields": {...}, "details": {...}} (formato actual)
+    - {"campo": valor, ...} (formato legacy)
+    """
     if isinstance(payload, dict) and "fields" in payload and "details" in payload:
         fields = payload.get("fields") or {}
         details = payload.get("details") or {}
@@ -208,6 +262,7 @@ def _coerce_extraction_payload(payload: Any) -> tuple[dict[str, Any], dict[str, 
 
 
 def _choose_schema_for_expediente(texts: list[str]) -> str:
+    """Elige el esquema para expediente usando señales simples y fallback a clasificador."""
     combined = "\n".join(t for t in texts if isinstance(t, str) and t.strip())
     t = combined.lower()
     hipotecario_signals = [
@@ -228,6 +283,7 @@ def _choose_schema_for_expediente(texts: list[str]) -> str:
 
 
 def _pick_better_detail(existing: dict[str, Any] | None, incoming: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Selecciona el mejor detalle de un campo basándose en confianza (si existe)."""
     if not isinstance(incoming, dict):
         return existing
     if not isinstance(existing, dict):
@@ -248,6 +304,21 @@ def run_expediente(
     doc_ids: list[str | None] | None = None,
     schema_name: str | None = None,
 ) -> dict[str, Any]:
+    """Ejecuta el pipeline en modo expediente (multi-documento) y fusiona resultados.
+
+    Args:
+        texts: Lista de textos (uno por documento).
+        schemas_dir: Directorio de esquemas YAML.
+        pages_by_doc: Lista paralela de páginas por documento.
+        doc_ids: Lista paralela de doc_id por documento (para RAG persistente).
+        schema_name: Si se indica, fuerza el esquema. Si no, se infiere automáticamente.
+
+    Returns:
+        Resultado agregado: documentos procesados + extracción fusionada + auditoría.
+
+    Raises:
+        ValueError: Si `texts` está vacío.
+    """
     if not texts:
         raise ValueError("texts no puede estar vacío")
 
@@ -262,7 +333,11 @@ def run_expediente(
     present_types: list[str] = []
 
     for i, text in enumerate(texts):
+        if settings.enable_pii_redaction:
+            text, _ = redact_pii(text)
         pages = pages_by_doc[i] if isinstance(pages_by_doc, list) and i < len(pages_by_doc) else None
+        if settings.enable_pii_redaction and isinstance(pages, list):
+            pages = [redact_pii(p)[0] for p in pages]
         doc_id = doc_ids[i] if isinstance(doc_ids, list) and i < len(doc_ids) else None
 
         inferred = _infer_document_type(schema, text)
@@ -270,13 +345,17 @@ def run_expediente(
             present_types.append(inferred)
         doc_schema = schema
         if inferred and any(getattr(f, "document_type", None) for f in schema.fields):
+            # Filtra los campos para evitar pedir al LLM información de otros tipos documentales.
             filtered_fields = [f for f in schema.fields if f.document_type == inferred]
             if filtered_fields:
-                doc_schema = schema.model_copy(update={"fields": filtered_fields, "document_types": [inferred]})
+                doc_schema = schema.model_copy(
+                    update={"fields": filtered_fields, "document_types": [inferred]}
+                )
 
         extracted_payload = extract_from_text(text, doc_schema, pages=pages, doc_id=doc_id)
         fields, details, extracted_raw = _coerce_extraction_payload(extracted_payload)
 
+        # Fusión de campos: prioriza valores no nulos; resuelve conflictos con confianza si existe.
         for k, v in fields.items():
             if v is None and k in merged_fields and merged_fields[k] is not None:
                 continue
@@ -299,7 +378,11 @@ def run_expediente(
                 "doc_index": i,
                 "doc_id": doc_id,
                 "document_type": inferred,
-                "schema": {"name": doc_schema.name, "version": doc_schema.version, "document_types": doc_schema.document_types},
+                "schema": {
+                    "name": doc_schema.name,
+                    "version": doc_schema.version,
+                    "document_types": doc_schema.document_types,
+                },
                 "extracted_raw": extracted_raw,
                 "extracted": fields,
             }
@@ -307,6 +390,7 @@ def run_expediente(
 
     expediente_schema = schema
     if present_types and any(getattr(f, "document_type", None) for f in schema.fields):
+        # Schema efectivo: evita requeridos de tipos documentales no presentes en el expediente.
         expediente_fields = [f for f in schema.fields if f.document_type in present_types or f.document_type is None]
         if expediente_fields:
             expediente_schema = schema.model_copy(update={"fields": expediente_fields, "document_types": present_types})
@@ -315,7 +399,13 @@ def run_expediente(
         merged_fields.setdefault(f.name, None)
         merged_details.setdefault(
             f.name,
-            {"nombre": f.name, "valor": merged_fields.get(f.name), "confianza": None, "evidencia_textual": "", "pagina": 1},
+            {
+                "nombre": f.name,
+                "valor": merged_fields.get(f.name),
+                "confianza": None,
+                "evidencia_textual": "",
+                "pagina": 1,
+            },
         )
 
     normalization = normalize_extracted(merged_fields, expediente_schema)

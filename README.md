@@ -105,6 +105,8 @@ ollama pull nomic-embed-text
 
 Puedes ajustar el comportamiento sin tocar código:
 
+- `LLM_BACKEND` (default: `local`) valores: `local` (Ollama) o `gpt4mini` (OpenAI)
+- `OPENAI_API_KEY` (requerida si `LLM_BACKEND=gpt4mini`)
 - `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
 - `OLLAMA_TEXT_MODEL` (default: `llama3.2:3b`)
 - `OLLAMA_CLASSIFIER_MODEL` (default: `llama3.2:3b`)
@@ -112,6 +114,7 @@ Puedes ajustar el comportamiento sin tocar código:
 - `OLLAMA_TIMEOUT_S` (default: `600`)
 - `OLLAMA_TEXT_NUM_PREDICT` (default: `256`)
 - `OLLAMA_CLASSIFIER_NUM_PREDICT` (default: `64`)
+- `ENABLE_PII_REDACTION` (default: `false`) aplica seudonimización básica de PII en el texto antes de extraer
 
 ## Ejecutar pruebas
 
@@ -140,6 +143,12 @@ Para PDF:
 
 - En Swagger (o cliente) usa `POST /extract_pdf` subiendo un archivo PDF.
 - Parámetro `mode`: `auto` (intenta texto; si no hay, intenta visión) o `vision` (fuerza visión).
+
+Endpoints compatibles con la Propuesta Técnica:
+
+- `POST /upload` (PDF → doc_id)
+- `POST /process` (doc_id o text → resultado del pipeline)
+- `GET /report/{doc_id}` (último resultado cacheado por doc_id)
 
 ## Ejecutar la UI (Streamlit)
 

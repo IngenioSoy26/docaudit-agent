@@ -16,12 +16,16 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
+    # Streamlit ejecuta el script como módulo; esto asegura imports relativos al proyecto.
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ui.components import render_ground_truth_evaluation  # noqa: E402
+from core.schema_models import DocSchema  # noqa: E402
+import core.schema_loader as schema_loader  # noqa: E402
+from ui.components import render_confidence_gauge, render_ground_truth_evaluation  # noqa: E402
 
 try:  # noqa: E402
     from core.document_loader import extract_text_from_pdf_bytes, extract_text_from_scanned_pdf_bytes
@@ -47,8 +51,42 @@ schema_choice = st.selectbox(
     index=0,
 )
 
+with st.sidebar:
+    st.subheader("Configuración")
+    st.write("Editor de esquemas YAML")
+    schemas_dir = PROJECT_ROOT / "schemas"
+    schema_files = sorted(schemas_dir.glob("*.yaml"))
+    schema_names = [p.name for p in schema_files]
+    if not schema_names:
+        st.warning("No se encontraron archivos .yaml en schemas/.")
+        selected_schema_path = None
+    else:
+        selected_schema_name = st.selectbox("Esquema", options=schema_names, index=0)
+        selected_schema_path = schemas_dir / selected_schema_name
+    if selected_schema_path and selected_schema_path.exists():
+        original_yaml = selected_schema_path.read_text(encoding="utf-8")
+        edited_yaml = st.text_area("Contenido YAML", value=original_yaml, height=260)
+        col_v, col_s = st.columns(2)
+        with col_v:
+            if st.button("Validar YAML"):
+                try:
+                    raw = yaml.safe_load(edited_yaml)
+                    if isinstance(raw, dict) and "caso_uso" in raw:
+                        schema_loader._load_new_format(raw)
+                    else:
+                        DocSchema.model_validate(raw)
+                    st.success("YAML válido.")
+                except Exception as e:
+                    st.error("YAML inválido o no compatible con el schema loader.")
+                    st.exception(e)
+        with col_s:
+            if st.button("Guardar YAML"):
+                selected_schema_path.write_text(edited_yaml, encoding="utf-8")
+                st.success(f"Guardado: {selected_schema_path.name}")
+
 uploaded_pdfs = st.file_uploader("Subir PDF(s)", type=["pdf"], accept_multiple_files=True)
 if uploaded_pdfs:
+    # Al permitir múltiples PDFs se habilita el modo expediente (fusión multi-documento).
     expediente_texts: list[str] = []
     expediente_pages: list[list[str] | None] = []
     expediente_doc_ids: list[str] = []
@@ -215,11 +253,38 @@ if run_clicked:
         report = result.get("report", {}) or {}
         report_json = report.get("json") or {}
         report_md = report.get("markdown") or ""
+        score = report_json.get("score_confianza")
+        if isinstance(score, (int, float)):
+            render_confidence_gauge(score=float(score))
         if report_md:
             st.markdown(report_md)
         if report_json:
             st.write("Informe (JSON)")
             st.json(report_json)
+            campos = report_json.get("campos") or {}
+            if isinstance(campos, dict) and campos:
+                rows = []
+                for k, v in campos.items():
+                    if not isinstance(v, dict):
+                        continue
+                    rows.append(
+                        {
+                            "campo": k,
+                            "valor": v.get("valor"),
+                            "confianza": v.get("confianza"),
+                            "pagina": v.get("pagina"),
+                            "evidencia": v.get("evidencia_textual"),
+                        }
+                    )
+                if rows:
+                    st.write("Evidencias por campo")
+                    st.dataframe(rows, use_container_width=True)
+                    field_options = [r["campo"] for r in rows]
+                    sel = st.selectbox("Ver evidencia", options=field_options)
+                    chosen = next((r for r in rows if r["campo"] == sel), None)
+                    if chosen and isinstance(chosen.get("evidencia"), str) and chosen["evidencia"].strip():
+                        st.markdown("**Evidencia textual**")
+                        st.markdown(f"<mark>{chosen['evidencia']}</mark>", unsafe_allow_html=True)
 
     if tab_eval is not None:
         with tab_eval:

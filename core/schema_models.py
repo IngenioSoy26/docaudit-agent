@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Modelos de esquema (Pydantic).
+
+Estos modelos representan la configuración declarativa que gobierna la extracción,
+normalización, validación y auditoría. Se cargan desde YAML y se usan a lo largo del
+pipeline.
+"""
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -10,11 +17,18 @@ RuleSeverity = Literal["critica", "advertencia", "info"]
 
 
 class FieldRule(BaseModel):
+    """Regla de validación/normalización asociada a un campo.
+
+    Ejemplos de `kind`: "min", "max", "regex", "enum", "format".
+    """
+
     kind: str
     params: dict[str, Any] = Field(default_factory=dict)
 
 
 class SchemaField(BaseModel):
+    """Definición de un campo del esquema."""
+
     name: str
     type: PrimitiveType
     required: bool = False
@@ -25,6 +39,8 @@ class SchemaField(BaseModel):
 
 
 class DecisionRule(BaseModel):
+    """Regla de decisión (auditoría) expresada como una expresión booleana."""
+
     id: str | None = None
     descripcion: str
     expresion: str
@@ -33,6 +49,8 @@ class DecisionRule(BaseModel):
 
 
 class ReportConfig(BaseModel):
+    """Configuración del informe generado por el auditor."""
+
     formato: list[str] = Field(default_factory=lambda: ["json"])
     incluir_evidencias: bool = False
     incluir_score_confianza: bool = True
@@ -41,6 +59,8 @@ class ReportConfig(BaseModel):
 
 
 class DocSchema(BaseModel):
+    """Esquema completo de un caso de uso (campos, tipos documentales y reglas)."""
+
     name: str
     version: str
     domain: str | None = None

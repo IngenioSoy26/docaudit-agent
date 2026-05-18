@@ -24,6 +24,7 @@ IssueLevel = Literal["error", "warning"]
 
 @dataclass(frozen=True)
 class ValidationIssue:
+    """Representa una incidencia de validación asociada a un campo."""
     level: IssueLevel
     field: str
     code: str
@@ -31,6 +32,7 @@ class ValidationIssue:
 
 
 def _is_empty(value: Any) -> bool:
+    """Indica si un valor se considera vacío (None o string en blanco)."""
     if value is None:
         return True
     if isinstance(value, str) and value.strip() == "":
@@ -39,6 +41,7 @@ def _is_empty(value: Any) -> bool:
 
 
 def _try_parse_date(value: Any) -> bool:
+    """Verifica si un valor es una fecha válida (date o string ISO YYYY-MM-DD)."""
     if isinstance(value, date) and not isinstance(value, datetime):
         return True
     if isinstance(value, str):
@@ -51,6 +54,7 @@ def _try_parse_date(value: Any) -> bool:
 
 
 def _try_parse_datetime(value: Any) -> bool:
+    """Verifica si un valor es un datetime válido (datetime o string ISO)."""
     if isinstance(value, datetime):
         return True
     if isinstance(value, str):
@@ -63,6 +67,7 @@ def _try_parse_datetime(value: Any) -> bool:
 
 
 def _is_number(value: Any) -> bool:
+    """Indica si un valor puede interpretarse como número (int/float o string numérico)."""
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return True
     if isinstance(value, str):
@@ -75,6 +80,7 @@ def _is_number(value: Any) -> bool:
 
 
 def _as_float(value: Any) -> float | None:
+    """Convierte un valor a float si es posible; devuelve None si no."""
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     if isinstance(value, str):
@@ -86,6 +92,7 @@ def _as_float(value: Any) -> float | None:
 
 
 def _as_int(value: Any) -> int | None:
+    """Convierte un valor a int si representa un entero exacto; si no, devuelve None."""
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     if isinstance(value, float):
@@ -104,6 +111,7 @@ def _as_int(value: Any) -> int | None:
 
 
 def _check_type(field: SchemaField, value: Any) -> list[ValidationIssue]:
+    """Valida el tipo de un campo según `field.type`."""
     issues: list[ValidationIssue] = []
     t = field.type
     if _is_empty(value):
@@ -173,6 +181,7 @@ def _check_type(field: SchemaField, value: Any) -> list[ValidationIssue]:
 
 
 def _check_rules(field: SchemaField, value: Any) -> list[ValidationIssue]:
+    """Aplica reglas declarativas por campo (min/max/regex/enum) si el valor no está vacío."""
     issues: list[ValidationIssue] = []
     if _is_empty(value):
         return issues
@@ -233,7 +242,20 @@ def _check_rules(field: SchemaField, value: Any) -> list[ValidationIssue]:
 
 
 def validate_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[str, Any]:
-    """Valida campos y devuelve un resumen con `valid` e incidencias."""
+    """Valida los campos extraídos contra el esquema.
+
+    Se asume que `extracted` ya está normalizado (ver core.normalizer), para que la
+    validación opere sobre formatos consistentes.
+
+    Args:
+        extracted: Dict de campos normalizados.
+        schema: Esquema con campos y reglas.
+
+    Returns:
+        Un dict con:
+        - valid: bool
+        - issues: lista serializable de incidencias
+    """
     issues: list[ValidationIssue] = []
 
     for field in schema.fields:

@@ -1,3 +1,8 @@
+"""Tests del cargador de esquemas.
+
+Valida que los YAML se cargan y se convierten correctamente a los modelos internos.
+"""
+
 from core.schema_loader import load_schema
 
 

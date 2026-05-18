@@ -1,3 +1,12 @@
+"""Tests de auditor, extractor y orquestador.
+
+Estos tests validan:
+- carga de esquemas en formato extendido,
+- evaluación de reglas de decisión,
+- ejecución del orquestador sin depender de un LLM real (monkeypatch),
+- robustez del parser JSON.
+"""
+
 from agents.auditor import audit_document
 from core.schema_loader import load_schema
 from core.validator import validate_extracted

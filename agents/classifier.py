@@ -11,7 +11,20 @@ import re
 
 from core.llm import get_classifier_llm
 
+
 def classify_text(text: str) -> str:
+    """Clasifica un texto en uno de los casos de uso disponibles.
+
+    Estrategia:
+    1) Heurísticas por palabras clave (rápidas y robustas).
+    2) Fallback a LLM local si no hay señales claras.
+
+    Args:
+        text: Texto a clasificar.
+
+    Returns:
+        El id del esquema (p.ej., "credito_hipotecario").
+    """
     t = text.lower()
 
     schemas = ["credito_hipotecario", "auditoria_fiscal", "kyc_onboarding"]

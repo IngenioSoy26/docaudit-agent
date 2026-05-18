@@ -28,6 +28,14 @@ class RuleResult:
 
 
 def coalesce(*args: Any) -> Any:
+    """Devuelve el primer argumento no nulo (None-safe).
+
+    Args:
+        *args: Valores candidatos.
+
+    Returns:
+        El primer valor distinto de None, o None si todos son None.
+    """
     for a in args:
         if a is not None:
             return a
@@ -44,6 +52,7 @@ _ALLOWED_FUNCS: dict[str, Any] = {
 
 
 def _is_empty(value: Any) -> bool:
+    """Indica si un valor debe considerarse vacío a efectos de completitud."""
     if value is None:
         return True
     if isinstance(value, str) and value.strip() == "":
@@ -52,6 +61,19 @@ def _is_empty(value: Any) -> bool:
 
 
 def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
+    """Evalúa una expresión booleana de forma segura usando un subconjunto de AST.
+
+    La expresión proviene de YAML (reglas_decision). Para evitar ejecución de código
+    arbitrario, solo se permiten nodos/operadores explícitos y funciones incluidas
+    en `_ALLOWED_FUNCS`.
+
+    Args:
+        expr: Expresión booleana a evaluar (p.ej. "importe_total > 0 and iva in [0, 21]").
+        context: Variables disponibles (campos extraídos y variables del sistema).
+
+    Returns:
+        True/False si se pudo evaluar; None si la expresión no es válida o no evaluable.
+    """
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError:
@@ -61,9 +83,11 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
         if isinstance(node, ast.Expression):
             return _eval(node.body)
 
+        # Literales (números, strings, None, True/False) en Python 3.
         if isinstance(node, ast.Constant):
             return node.value
 
+        # Variables de contexto y literales estilo YAML/JSON (true/false/null).
         if isinstance(node, ast.Name):
             if node.id in context:
                 return context[node.id]
@@ -78,12 +102,14 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
                 return _ALLOWED_FUNCS[node.id]
             raise ValueError(f"Nombre no permitido: {node.id}")
 
+        # Colecciones literales para permitir expresiones tipo `x in ["A", "B"]`.
         if isinstance(node, ast.List):
             return [_eval(elt) for elt in node.elts]
 
         if isinstance(node, ast.Tuple):
             return tuple(_eval(elt) for elt in node.elts)
 
+        # Acceso controlado a algunos atributos útiles (p.ej., fechas y timedeltas).
         if isinstance(node, ast.Attribute):
             value = _eval(node.value)
             attr = node.attr
@@ -97,6 +123,7 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
                     return part
             raise ValueError("Acceso a atributo no permitido")
 
+        # Operadores unarios: +x, -x, not x.
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub, ast.Not)):
             operand = _eval(node.operand)
             if isinstance(node.op, ast.Not):
@@ -105,12 +132,14 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
                 return +operand
             return -operand
 
+        # Operadores lógicos: and/or.
         if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
             values = [_eval(v) for v in node.values]
             if isinstance(node.op, ast.And):
                 return all(bool(v) for v in values)
             return any(bool(v) for v in values)
 
+        # Operadores aritméticos básicos.
         if isinstance(node, ast.BinOp) and isinstance(
             node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod)
         ):
@@ -126,6 +155,7 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
                 return left / right
             return left % right
 
+        # Comparaciones: ==, !=, <, <=, >, >=, in, not in, is, is not (encadenadas).
         if isinstance(node, ast.Compare):
             left = _eval(node.left)
             for op, comp in zip(node.ops, node.comparators, strict=False):
@@ -158,6 +188,7 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
                 left = right
             return True
 
+        # Llamadas a funciones utilitarias explícitamente permitidas.
         if isinstance(node, ast.Call):
             func = _eval(node.func)
             if func not in _ALLOWED_FUNCS.values():
@@ -176,6 +207,7 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
 
 
 def _evaluate_decision_rules(schema: DocSchema, extracted: dict[str, Any]) -> list[RuleResult]:
+    """Evalúa todas las reglas de decisión declaradas en el esquema."""
     context = _prepare_context(extracted)
     context["fecha_actual"] = date.today()
     context["datetime_actual"] = datetime.now()
@@ -187,6 +219,7 @@ def _evaluate_decision_rules(schema: DocSchema, extracted: dict[str, Any]) -> li
 
 
 def _prepare_context(extracted: dict[str, Any]) -> dict[str, Any]:
+    """Prepara el contexto de evaluación (incluye parseo de fechas ISO a date/datetime)."""
     ctx: dict[str, Any] = dict(extracted)
     for k, v in list(ctx.items()):
         if not isinstance(v, str):
@@ -209,6 +242,7 @@ def _prepare_context(extracted: dict[str, Any]) -> dict[str, Any]:
 
 
 def _evaluate_one_rule(rule: DecisionRule, context: dict[str, Any]) -> RuleResult:
+    """Evalúa una regla y devuelve un resultado estructurado (incluye errores de evaluación)."""
     expr = rule.expresion
     ok = _safe_eval_expr(expr, context)
     if ok is None:
@@ -236,6 +270,7 @@ def _compute_score(
     total_fields: int,
     avg_confidence: float | None,
 ) -> float:
+    """Calcula un score (0-1) combinando completitud, validez y confianza media (si existe)."""
     filled = sum(1 for v in extracted.values() if not _is_empty(v))
     completeness = (filled / total_fields) if total_fields else 0.0
     valid = bool(validation.get("valid"))
@@ -253,6 +288,17 @@ def audit_document(
     validation: dict[str, Any],
     field_details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Genera el informe final de auditoría (JSON y Markdown) para un documento o expediente.
+
+    Args:
+        schema: Esquema aplicado (campos + reglas de decisión).
+        extracted: Campos ya normalizados.
+        validation: Resultado de validación (valid/issues).
+        field_details: Metadatos por campo (confianza, evidencia, página) si están disponibles.
+
+    Returns:
+        Un dict con dos vistas: `json` (estructura completa) y `markdown` (resumen legible).
+    """
     rule_results = _evaluate_decision_rules(schema, extracted)
     total_fields = len(schema.fields)
     details = field_details or {}

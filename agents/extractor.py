@@ -26,6 +26,14 @@ from core.rag import (
 
 
 def _schema_instructions(schema: DocSchema) -> str:
+    """Construye instrucciones para forzar una salida JSON estricta del LLM.
+
+    Args:
+        schema: Esquema con la lista exacta de campos esperados.
+
+    Returns:
+        Un string con instrucciones y el contrato de salida (lista de CampoExtraido).
+    """
     lines: list[str] = []
     lines.append("Devuelve SOLO JSON válido (RFC 8259).")
     lines.append("Usa comillas dobles para claves y strings. No uses comas finales ni comentarios.")
@@ -60,6 +68,11 @@ def _schema_instructions(schema: DocSchema) -> str:
 
 
 def _parse_number_str(raw: str) -> float | None:
+    """Intenta convertir un número en formato local (ES/EN) a float.
+
+    Soporta separadores de miles ('.' o ',') y decimales (',' o '.').
+    Limpia símbolos monetarios y sufijos comunes.
+    """
     s = raw.strip()
     s = s.replace("€", "").replace("$", "")
     s = re.sub(r"\s+", "", s)
@@ -97,6 +110,11 @@ def _parse_number_str(raw: str) -> float | None:
 
 
 def _heuristic_total_gastos_mensuales(text: str) -> float | None:
+    """Heurística simple para extraer un total aproximado desde un extracto bancario.
+
+    Busca líneas de movimientos (p.ej., transferencias/pagos/cargos) y suma importes
+    detectados cerca del trigger.
+    """
     t = (text or "").strip()
     if not t:
         return None
@@ -132,6 +150,16 @@ def _heuristic_total_gastos_mensuales(text: str) -> float | None:
 
 
 def _safe_json_parse(text: str) -> Any:
+    """Parsea JSON de salida del LLM de forma robusta.
+
+    En producción, algunos modelos devuelven:
+    - fences ```json ... ```
+    - comas finales
+    - comentarios estilo JS
+    - números con miles/decimales en formato local
+
+    Este parser intenta recuperar la estructura sin inventar datos.
+    """
     raw = (text or "").strip()
 
     def _fix_malformed_numbers(s: str) -> str:
@@ -232,6 +260,7 @@ def _safe_json_parse(text: str) -> Any:
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
+        # Fallback: intenta recortar a un objeto/lista JSON y corregir fallos comunes.
         obj_start = raw.find("{")
         obj_end = raw.rfind("}")
         arr_start = raw.find("[")
@@ -273,6 +302,19 @@ def extract_from_text(
     pages: list[str] | None = None,
     doc_id: str | None = None,
 ) -> dict[str, Any]:
+    """Extrae campos estructurados desde texto usando LLM + RAG de evidencias.
+
+    Args:
+        text: Texto de entrada (ya extraído del PDF).
+        schema: Esquema (campos esperados y reglas).
+        pages: Texto por página, si está disponible (mejora chunks y evidencias).
+        doc_id: Identificador estable del documento para persistencia del índice RAG.
+
+    Returns:
+        Un dict con:
+        - {"fields": {...}, "details": {...}} cuando la salida se puede estructurar,
+        - o un dict directo de campos si el LLM devolvió formato antiguo.
+    """
     if schema.name == "credito_hipotecario" and len(schema.fields) == 1:
         only = schema.fields[0]
         if only.name == "total_gastos_mensuales":

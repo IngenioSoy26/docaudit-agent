@@ -1,3 +1,10 @@
+"""Tests de validación.
+
+Comprueba que:
+- un payload correcto pasa sin incidencias,
+- reglas required y min generan errores cuando corresponde.
+"""
+
 from core.schema_loader import load_schema
 from core.validator import validate_extracted
 

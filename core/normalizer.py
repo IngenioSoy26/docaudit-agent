@@ -24,6 +24,7 @@ ChangeType = Literal["coerce", "trim", "parse"]
 
 @dataclass(frozen=True)
 class NormalizationChange:
+    """Registro de un cambio aplicado durante la normalización."""
     field: str
     kind: ChangeType
     before: Any
@@ -31,6 +32,7 @@ class NormalizationChange:
 
 
 def _is_empty(value: Any) -> bool:
+    """Indica si un valor debe considerarse vacío (None o string en blanco)."""
     if value is None:
         return True
     if isinstance(value, str) and value.strip() == "":
@@ -39,6 +41,7 @@ def _is_empty(value: Any) -> bool:
 
 
 def _normalize_string(value: Any) -> tuple[Any, list[NormalizationChange]]:
+    """Recorta espacios en strings y registra el cambio si aplica."""
     changes: list[NormalizationChange] = []
     if value is None:
         return value, changes
@@ -51,6 +54,13 @@ def _normalize_string(value: Any) -> tuple[Any, list[NormalizationChange]]:
 
 
 def _parse_number_str(raw: str) -> float | None:
+    """Convierte strings numéricos (con posibles miles/decimales locales) a float.
+
+    Ejemplos soportados:
+    - "5.489,11 EUR" -> 5489.11
+    - "1,250.50" -> 1250.50
+    - "9000" -> 9000.0
+    """
     s = raw.strip()
     s = s.replace("€", "").replace("$", "")
     s = re.sub(r"\s+", "", s)
@@ -64,7 +74,9 @@ def _parse_number_str(raw: str) -> float | None:
     )
     s = re.sub(r"[^0-9,.\-+]", "", lower)
 
-    if re.fullmatch(r"[-+]?\d+([.,]\d+)?", s) is None and re.fullmatch(r"[-+]?\d{1,3}([.,]\d{3})+([.,]\d+)?", s) is None:
+    if re.fullmatch(r"[-+]?\d+([.,]\d+)?", s) is None and re.fullmatch(
+        r"[-+]?\d{1,3}([.,]\d{3})+([.,]\d+)?", s
+    ) is None:
         return None
 
     has_dot = "." in s
@@ -86,6 +98,7 @@ def _parse_number_str(raw: str) -> float | None:
 
 
 def _normalize_number(value: Any) -> tuple[Any, bool]:
+    """Normaliza un value a float cuando sea posible."""
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value), False
     if isinstance(value, str):
@@ -96,6 +109,7 @@ def _normalize_number(value: Any) -> tuple[Any, bool]:
 
 
 def _normalize_integer(value: Any) -> tuple[Any, bool]:
+    """Normaliza un value a int cuando sea un número entero representable."""
     if isinstance(value, int) and not isinstance(value, bool):
         return value, False
     num, changed = _normalize_number(value)
@@ -105,6 +119,7 @@ def _normalize_integer(value: Any) -> tuple[Any, bool]:
 
 
 def _parse_date_str(raw: str) -> str | None:
+    """Parsea fechas a ISO (YYYY-MM-DD), soportando formatos comunes (DD/MM/YYYY)."""
     s = raw.strip()
     try:
         return date.fromisoformat(s).isoformat()
@@ -123,6 +138,7 @@ def _parse_date_str(raw: str) -> str | None:
 
 
 def _normalize_date(value: Any) -> tuple[Any, bool]:
+    """Normaliza fechas a string ISO."""
     if isinstance(value, date) and not isinstance(value, datetime):
         return value.isoformat(), True
     if isinstance(value, str):
@@ -133,6 +149,7 @@ def _normalize_date(value: Any) -> tuple[Any, bool]:
 
 
 def _normalize_datetime(value: Any) -> tuple[Any, bool]:
+    """Normaliza datetimes a string ISO (YYYY-MM-DDTHH:MM:SS...)."""
     if isinstance(value, datetime):
         return value.isoformat(), True
     if isinstance(value, str):
@@ -146,6 +163,7 @@ def _normalize_datetime(value: Any) -> tuple[Any, bool]:
 
 
 def _normalize_boolean(value: Any) -> tuple[Any, bool]:
+    """Normaliza strings tipo 'si/no', 'true/false', '0/1' a boolean."""
     if isinstance(value, bool):
         return value, False
     if isinstance(value, str):
@@ -158,6 +176,7 @@ def _normalize_boolean(value: Any) -> tuple[Any, bool]:
 
 
 def _normalize_field(field: SchemaField, value: Any) -> tuple[Any, list[NormalizationChange]]:
+    """Normaliza un campo según su tipo declarado y reglas (incluyendo enum si aplica)."""
     changes: list[NormalizationChange] = []
     if _is_empty(value):
         return None, changes
@@ -245,6 +264,7 @@ def normalize_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[st
     tipo_field = next((f for f in schema.fields if f.name == "tipo_documento"), None)
     num_field = next((f for f in schema.fields if f.name == "numero_documento"), None)
     if tipo_field and num_field:
+        # Compatibilidad: si el schema tiene tipo_documento/numero_documento, inferir el tipo por regex.
         allowed: list[str] | None = None
         for r in tipo_field.rules:
             if r.kind == "enum":

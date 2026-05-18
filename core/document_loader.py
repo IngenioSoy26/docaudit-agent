@@ -21,6 +21,18 @@ from core.settings import settings
 
 
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
+    """Extrae texto embebido de un PDF (ruta preferida).
+
+    Intenta:
+    1) Docling (si está instalado) para una extracción más rica.
+    2) Fallback a PyPDF para extraer texto por página.
+
+    Args:
+        pdf_bytes: Contenido del PDF en bytes.
+
+    Returns:
+        Dict con claves como `text`, `pages`, `page_texts` y `method`.
+    """
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
         pages = len(reader.pages)
@@ -59,6 +71,10 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
 
 
 def _downscale_image_bytes(data: bytes) -> bytes:
+    """Reduce resolución/calidad de una imagen para acelerar inferencia de visión (CPU).
+
+    Si PIL no está disponible o ocurre un error, devuelve los bytes originales.
+    """
     try:
         from PIL import Image
     except Exception:
@@ -81,6 +97,10 @@ def _downscale_image_bytes(data: bytes) -> bytes:
 
 
 def extract_images_from_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
+    """Extrae imágenes representativas (una por página si existe) desde un PDF.
+
+    Nota: usa la imagen más grande por página como aproximación al contenido principal.
+    """
     reader = PdfReader(io.BytesIO(pdf_bytes))
     results: list[dict[str, Any]] = []
     for i, page in enumerate(reader.pages):
@@ -100,6 +120,13 @@ def extract_images_from_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
 
 
 def extract_text_from_scanned_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
+    """Extrae texto desde un PDF escaneado usando un modelo de visión en Ollama.
+
+    Este método:
+    - extrae imágenes por página,
+    - envía cada imagen a un modelo de visión (Qwen2.5-VL por defecto),
+    - devuelve texto plano (más `page_texts` para RAG/evidencias).
+    """
     images = extract_images_from_pdf_bytes(pdf_bytes)
     pages = len(PdfReader(io.BytesIO(pdf_bytes)).pages)
     if not images:

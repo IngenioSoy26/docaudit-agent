@@ -9,7 +9,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Parámetros de configuración del sistema.
+
+    Las variables pueden definirse como variables de entorno o en un archivo `.env`.
+    """
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    llm_backend: str = Field(default="local")
+    openai_api_key: str | None = Field(default=None)
 
     ollama_base_url: str = Field(default="http://localhost:11434")
     ollama_text_model: str = Field(default="llama3.2:3b")
@@ -23,6 +31,8 @@ class Settings(BaseSettings):
     ollama_vision_jpeg_quality: int = Field(default=70)
     ollama_classifier_num_predict: int = Field(default=64)
     rag_persist_dir: str = Field(default=".chroma")
+
+    enable_pii_redaction: bool = Field(default=False)
 
 
 settings = Settings()

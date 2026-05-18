@@ -18,7 +18,14 @@ from core.schema_models import DecisionRule, DocSchema, FieldRule, ReportConfig,
 
 
 def load_schema(schema_path: str | Path) -> DocSchema:
-    """Carga un esquema desde disco y lo valida contra los modelos Pydantic."""
+    """Carga un esquema YAML desde disco y lo valida contra los modelos Pydantic.
+
+    Args:
+        schema_path: Ruta al archivo YAML.
+
+    Returns:
+        Un `DocSchema` validado.
+    """
     path = Path(schema_path)
     try:
         text = path.read_text(encoding="utf-8")
@@ -39,6 +46,7 @@ def load_schema(schema_path: str | Path) -> DocSchema:
 
 
 def _map_tipo_dato(tipo_dato: str) -> str:
+    """Mapea tipos del YAML (p.ej. float/int/bool/fecha) a tipos primitivos del sistema."""
     t = (tipo_dato or "").strip().lower()
     if t in {"float", "number", "decimal"}:
         return "number"
@@ -54,6 +62,15 @@ def _map_tipo_dato(tipo_dato: str) -> str:
 
 
 def _field_from_campo(campo: dict, *, document_type: str | None = None) -> SchemaField:
+    """Convierte un bloque `campo` del YAML a un `SchemaField` interno.
+
+    Args:
+        campo: Dict con claves como nombre/tipo_dato/requerido/validacion/patron.
+        document_type: Tipo documental asociado (si aplica).
+
+    Returns:
+        Un `SchemaField` listo para validación/normalización.
+    """
     name = campo.get("nombre")
     field_type = _map_tipo_dato(campo.get("tipo_dato", "string"))
     required = bool(campo.get("requerido", False))
@@ -88,6 +105,7 @@ def _field_from_campo(campo: dict, *, document_type: str | None = None) -> Schem
 
 
 def _load_new_format(raw: dict) -> DocSchema:
+    """Carga el formato extendido (empresa) y lo transforma a `DocSchema`."""
     name = raw.get("caso_uso") or raw.get("name")
     version = raw.get("version") or "1.0"
     domain = raw.get("descripcion")
@@ -109,7 +127,12 @@ def _load_new_format(raw: dict) -> DocSchema:
             if isinstance(campos, list):
                 for campo in campos:
                     if isinstance(campo, dict):
-                        fields.append(_field_from_campo(campo, document_type=str(doc_type) if doc_type else None))
+                        fields.append(
+                            _field_from_campo(
+                                campo,
+                                document_type=str(doc_type) if doc_type else None,
+                            )
+                        )
 
     decision_rules: list[DecisionRule] = []
     reglas = raw.get("reglas_decision") or []

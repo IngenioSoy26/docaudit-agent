@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""Cliente HTTP ligero para Ollama.
+
+Se utiliza en dos escenarios:
+- Visión/OCR (chat con imágenes) para PDFs escaneados.
+- Embeddings para RAG cuando se usa ChromaDB.
+
+Nota: este módulo evita dependencias adicionales y usa `requests` directamente.
+"""
+
 import base64
 from typing import Any
 
@@ -9,6 +18,16 @@ from core.settings import settings
 
 
 def chat_with_images(prompt: str, images: list[bytes], model: str | None = None) -> str:
+    """Ejecuta un chat con imágenes contra la API de Ollama.
+
+    Args:
+        prompt: Instrucciones para el modelo de visión.
+        images: Lista de bytes de imágenes (p.ej. páginas de PDF).
+        model: Nombre del modelo (si None, usa el configurado por settings).
+
+    Returns:
+        Texto devuelto por el modelo (transcripción/resumen).
+    """
     url = settings.ollama_base_url.rstrip("/") + "/api/chat"
     b64_images = [base64.b64encode(b).decode("ascii") for b in images]
     payload: dict[str, Any] = {
@@ -33,6 +52,19 @@ def chat_with_images(prompt: str, images: list[bytes], model: str | None = None)
 
 
 def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]:
+    """Genera embeddings para una lista de textos usando Ollama.
+
+    Implementa compatibilidad con endpoints antiguos y nuevos:
+    - /api/embed (moderno)
+    - /api/embeddings (legacy)
+
+    Args:
+        texts: Textos a embebber.
+        model: Modelo de embeddings (si None, usa el configurado por settings).
+
+    Returns:
+        Lista de vectores (uno por texto). Si falla, devuelve listas vacías por entrada.
+    """
     if not texts:
         return []
 

@@ -8,8 +8,8 @@ fragmento más relevante para cada campo extraído, almacenando el índice en Ch
 """
 
 from dataclasses import dataclass
-from typing import Any
 import hashlib
+from typing import Any
 
 from core.ollama_http import embed_texts
 from core.settings import settings
@@ -17,12 +17,23 @@ from core.settings import settings
 
 @dataclass(frozen=True)
 class RagChunk:
+    """Chunk de texto con metadatos para indexación/recuperación."""
     id: str
     text: str
     metadata: dict[str, Any]
 
 
 def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[str]:
+    """Divide un texto en chunks solapados para RAG.
+
+    Args:
+        text: Texto completo.
+        chunk_size: Tamaño aproximado del chunk en caracteres.
+        overlap: Solape en caracteres entre chunks consecutivos.
+
+    Returns:
+        Lista de strings (chunks).
+    """
     t = (text or "").strip()
     if not t:
         return []
@@ -45,6 +56,7 @@ def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[st
 
 
 def build_chunks_from_pages(pages: list[str] | None) -> list[RagChunk]:
+    """Construye chunks a partir de texto por página (incluye metadata con número de página)."""
     if not pages:
         return []
     chunks: list[RagChunk] = []
@@ -55,6 +67,7 @@ def build_chunks_from_pages(pages: list[str] | None) -> list[RagChunk]:
 
 
 def build_chunks_from_text(text: str) -> list[RagChunk]:
+    """Construye chunks a partir de texto completo (sin información de página)."""
     chunks: list[RagChunk] = []
     for j, c in enumerate(chunk_text(text), start=1):
         chunks.append(RagChunk(id=f"c{j}", text=c, metadata={"page": None}))
@@ -62,6 +75,7 @@ def build_chunks_from_text(text: str) -> list[RagChunk]:
 
 
 def _sanitize_collection_name(name: str) -> str:
+    """Normaliza nombres de colecciones para cumplir restricciones de ChromaDB."""
     cleaned = []
     for ch in name:
         if ch.isalnum() or ch in {"_", "-"}:
@@ -85,9 +99,16 @@ def _get_collection(
     *,
     doc_id: str | None,
 ):
+    """Obtiene/crea una colección Chroma para el documento.
+
+    Si existe `doc_id`, se usa una colección persistente (reutilizable entre ejecuciones).
+    Si no existe, se crea una colección efímera (en memoria) para evitar persistencia.
+    """
     import chromadb
 
     class _OllamaEmbeddingFn:
+        """EmbeddingFunction compatible con ChromaDB usando embeddings vía Ollama HTTP."""
+
         def __call__(self, input: list[str]) -> list[list[float]]:
             return embed_texts(input)
 
@@ -103,6 +124,7 @@ def _get_collection(
             _COLLECTION_CACHE[key] = collection
 
         if key not in _INDEXED_KEYS:
+            # Indexa solo una vez por doc_id para evitar reinsertar chunks en cada llamada.
             try:
                 existing = collection.count()
             except Exception:
@@ -142,6 +164,11 @@ def retrieve_best_evidence(
     top_k: int = 3,
     doc_id: str | None = None,
 ) -> list[dict[str, Any]]:
+    """Recupera los mejores fragmentos de evidencia para un query.
+
+    Returns:
+        Lista de hits (id/text/metadata/distance).
+    """
     q = (query or "").strip()
     if not q or not chunks:
         return []
@@ -178,6 +205,7 @@ def retrieve_best_evidence_batch(
     top_k: int = 3,
     doc_id: str | None = None,
 ) -> list[list[dict[str, Any]]]:
+    """Versión batch de recuperación (1 query por campo) para reducir overhead."""
     if not queries or not chunks:
         return [[] for _ in queries]
 
