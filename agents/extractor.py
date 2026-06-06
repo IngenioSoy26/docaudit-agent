@@ -324,14 +324,22 @@ def extract_from_text(
                 }
                 return {"fields": fields, "details": details}
 
-    llm = get_text_llm()
-    prompt = (
-        f"{_schema_instructions(schema)}\n\n"
-        "Texto de entrada:\n"
-        f"{text}\n"
-    )
-    response = llm.invoke(prompt, stream=False)
-    raw = response.content if isinstance(response.content, str) else str(response.content)
+    try:
+        llm = get_text_llm()
+        prompt = (
+            f"{_schema_instructions(schema)}\n\n"
+            "Texto de entrada:\n"
+            f"{text}\n"
+        )
+        response = llm.invoke(prompt, stream=False)
+        raw = response.content if isinstance(response.content, str) else str(response.content)
+    except Exception:
+        fields = {f.name: None for f in schema.fields}
+        details = {
+            name: {"nombre": name, "valor": None, "confianza": None, "evidencia_textual": "", "pagina": 1}
+            for name in fields
+        }
+        return {"fields": fields, "details": details}
     allowed = {f.name for f in schema.fields}
     allowed_norm: dict[str, str] = {}
     for name in allowed:

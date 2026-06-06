@@ -17,7 +17,7 @@ from typing import Any
 import hashlib
 import time
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.document_loader import extract_text_from_pdf_bytes, extract_text_from_scanned_pdf_bytes
 from core.orchestrator import run_pipeline
@@ -48,7 +48,9 @@ class ExtractRequest(BaseModel):
 class ExtractResponse(BaseModel):
     """Respuesta estándar del pipeline (lista para serializar a JSON)."""
 
-    schema: dict[str, Any]
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: dict[str, Any] = Field(..., alias="schema")
     extracted_raw: dict[str, Any]
     extracted: dict[str, Any]
     normalization: dict[str, Any]
