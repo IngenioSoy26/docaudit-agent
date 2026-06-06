@@ -4,8 +4,10 @@ __pycache__/
 *$py.class
 venv/
 .venv/
+.venv*/
 .env
 .chroma/
+reports/
 
 # Jupyter Notebooks
 .ipynb_checkpoints
