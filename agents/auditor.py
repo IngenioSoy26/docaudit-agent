@@ -67,6 +67,15 @@ def _safe_eval_expr(expr: str, context: dict[str, Any]) -> bool | None:
     arbitrario, solo se permiten nodos/operadores explícitos y funciones incluidas
     en `_ALLOWED_FUNCS`.
 
+    Operaciones explícitamente NO permitidas (por diseño):
+    - imports, acceso al sistema de archivos o red, y cualquier tipo de E/S.
+    - llamadas a funciones arbitrarias (solo `abs`, `min`, `max`, `round`, `coalesce`).
+    - acceso a atributos peligrosos (p.ej. `__class__`, `__dict__`, `__globals__`, etc.).
+      Solo se permite un subconjunto seguro: `year`, `month`, `day` y `days`.
+    - acceso por índice / subscripting (p.ej. `x[0]`), comprehensions, lambdas,
+      definición de funciones, asignaciones, imports, acceso a módulos y cualquier
+      nodo AST no listado en la implementación.
+
     Args:
         expr: Expresión booleana a evaluar (p.ej. "importe_total > 0 and iva in [0, 21]").
         context: Variables disponibles (campos extraídos y variables del sistema).

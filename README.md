@@ -1,65 +1,74 @@
-# DocAudit Agent
+# DocAudit Agent — Manual de instalación y uso
 
-Sistema multi-agente para la auditoría y extracción inteligente de documentos hipotecarios, fiscales y KYC.
+DocAudit Agent es una plataforma **multi‑agente** para **extraer**, **normalizar**, **validar** y **auditar** documentos (hipotecarios, fiscales y KYC). Está pensada para convertir documentos en **datos estructurados y trazables** que apoyen el **análisis** y la **toma de decisiones**, mostrando además evidencias y reglas evaluadas.
 
-## Estado actual (plataforma)
+El sistema **no sustituye a un analista** ni debe usarse como “decisión crediticia automática”. Genera resultados, evidencias y alertas para revisión humana.
 
-Este repositorio ya incluye una plataforma funcional que:
+---
 
-- Orquesta 5 agentes en un grafo LangGraph: clasificador → extractor → normalizador → validador → auditor.
-- Extrae campos con LLM local (Ollama) devolviendo estructura por campo (valor, confianza, evidencia, página).
-- Soporta PDFs nativos (texto embebido) y PDFs escaneados (visión con Qwen2.5-VL).
-- Normaliza y valida contra reglas declarativas (required, min/max, regex, enum).
-- Genera un informe de auditoría (JSON + Markdown) con score y evaluación de reglas de decisión.
-- Robustez frente a salidas “sucias” del LLM (comentarios, comas finales, fences, números malformados como `5.489.11`).
-- Evidencias con RAG (ChromaDB) con caché y persistencia por documento (hash).
-- Expone API (FastAPI) y UI (Streamlit).
-- Incluye pruebas unitarias (schema/normalización/validación/auditoría/grafo).
+## 1) Qué hace (en 60 segundos)
 
-## Arquitectura (resumen)
+- Procesa texto o PDFs (nativos o escaneados) y extrae campos definidos en **YAML**.
+- Normaliza formatos (fechas, importes, booleanos) y valida reglas declarativas.
+- Evalúa reglas de decisión (auditoría) de forma segura y genera informe (JSON/Markdown).
+- Permite evaluar calidad con métricas (exact match, precisión/recall/F1, latencia, RAM) sobre un corpus con ground truth.
 
-Entrada: texto (o PDF → extracción de texto) + esquema YAML.
+---
 
-Grafo (LangGraph) con estado compartido:
+## 2) Arquitectura (visión general)
 
-1) Agente Clasificador: selecciona el caso de uso (schema).
-2) Agente Extractor: extrae campos (LLM local) en JSON.
-3) Agente Normalizador: homogeniza tipos/formato (fechas/importes/strings).
-4) Agente Validador: aplica reglas declarativas del esquema.
-5) Agente Auditor: produce informe (JSON + Markdown) + score y reglas de decisión.
+Pipeline (LangGraph) con estado compartido:
 
-## Estructura del Repositorio
+1) Clasificador → selecciona el caso de uso (schema).
+2) Extractor → produce JSON de campos.
+3) Normalizador → homogeniza tipos/formato.
+4) Validador → aplica reglas declarativas del schema.
+5) Auditor → evalúa reglas de decisión y genera informe.
 
-- `schemas/`: Esquemas YAML por caso de uso.
-- `agents/`: Un módulo Python por agente.
-- `core/`: Orquestador LangGraph + schema loader.
-- `api/`: FastAPI endpoints.
-- `ui/`: Streamlit app + componentes Stitch.
-- `tests/`: Pruebas unitarias e integración.
-- `data/sample_docs/`: Documentos anonimizados de prueba (por caso de uso).
-- `notebooks/`: Jupyter Notebooks de exploración.
-- `docs/`: Documentación técnica.
+---
 
-## Instalación (Windows + PowerShell)
+## 3) Roles de modelos/tecnologías (qué hace cada uno)
 
-1) Clona el repo dentro de tu carpeta de trabajo:
+- **LLaMA 3.2 3B (Ollama)**: extracción estructurada (texto → JSON) y tareas textuales (clasificación).
+- **Qwen2.5‑VL (Ollama)**: ruta visual para documentos escaneados o con componente visual.
+- **Docling (opcional)**: extracción más rica en PDFs nativos (layout → texto/markdown) cuando está disponible.
+- **nomic-embed-text (Ollama)**: embeddings para recuperación de evidencias.
+- **ChromaDB**: almacén vectorial local persistente para evidencias/RAG.
+- **Streamlit**: interfaz web para el usuario.
+- **FastAPI**: API REST para integración.
 
-```powershell
-cd "C:\Users\gusta\Desktop\Maestria\0. TFM\DocAudit Agent"
+---
+
+## 4) Requisitos (para cualquier equipo)
+
+Mínimos recomendados:
+- Python **3.10+**
+- Git (solo si vas a clonar desde GitHub)
+- Ollama instalado y ejecutándose en `http://localhost:11434` (requerido para extracción con LLM y visión)
+
+Recomendación de recursos:
+- CPU moderna y al menos **8 GB de RAM** (mejor 16 GB si usarás visión con Qwen2.5‑VL).
+
+---
+
+## 5) Instalación (paso a paso)
+
+### 5.1) Clonar el repositorio
+
+```bash
 git clone https://github.com/IngenioSoy26/docaudit-agent.git
-cd ".\docaudit-agent"
+cd docaudit-agent
 ```
 
-2) Crea el entorno virtual dentro del repo:
+### 5.2) Crear entorno virtual e instalar dependencias
+
+#### Windows (PowerShell)
 
 ```powershell
-py -m venv .venv
-```
-
-3) Activa el entorno virtual:
-
-```powershell
+py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
 Si PowerShell bloquea scripts:
@@ -69,183 +78,187 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 .\.venv\Scripts\Activate.ps1
 ```
 
-4) Instala dependencias:
+#### macOS / Linux (Terminal)
 
-```powershell
-.\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r requirements.txt
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-## Verificación de Ollama
+---
 
-1) Asegúrate de tener Ollama abierto (icono en la bandeja del sistema) y que responda en `http://localhost:11434`.
-2) Verifica que los modelos existan:
+## 6) Ollama (instalación y modelos)
 
-```powershell
+1) Instala Ollama desde su instalador oficial y confirma que el servicio está activo.
+2) Verifica conexión:
+
+```bash
 ollama list
 ```
 
-Modelos esperados:
+3) Descarga los modelos necesarios:
 
-- `qwen2.5vl:7b`
-- `llama3.2:3b` (texto por defecto + clasificación)
-- `mistral:7b-instruct` (opcional; suele ser más lento en CPU)
-- `nomic-embed-text` (embeddings para ChromaDB)
-
-Si falta alguno:
-
-```powershell
-ollama pull qwen2.5vl:7b
+```bash
 ollama pull llama3.2:3b
-ollama pull mistral:7b-instruct
+ollama pull qwen2.5vl:7b
 ollama pull nomic-embed-text
 ```
 
-## Configuración (variables de entorno)
+---
 
-Puedes ajustar el comportamiento sin tocar código:
+## 7) Ejecutar el sistema
 
-- `LLM_BACKEND` (default: `local`) valores: `local` (Ollama) o `gpt4mini` (OpenAI)
-- `OPENAI_API_KEY` (requerida si `LLM_BACKEND=gpt4mini`)
-- `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
-- `OLLAMA_TEXT_MODEL` (default: `llama3.2:3b`)
-- `OLLAMA_CLASSIFIER_MODEL` (default: `llama3.2:3b`)
-- `OLLAMA_EMBEDDING_MODEL` (default: `nomic-embed-text`)
-- `OLLAMA_TIMEOUT_S` (default: `600`)
-- `OLLAMA_TEXT_NUM_PREDICT` (default: `256`)
-- `OLLAMA_CLASSIFIER_NUM_PREDICT` (default: `64`)
-- `ENABLE_PII_REDACTION` (default: `false`) aplica seudonimización básica de PII en el texto antes de extraer
+### 7.1) Ejecutar pruebas
 
-## Ejecutar pruebas
-
-```powershell
-.\.venv\Scripts\python -m pytest -q
+```bash
+python -m pytest -q
 ```
 
-## Ejecutar la API (FastAPI)
+### 7.2) Ejecutar UI (Streamlit)
 
-En una terminal con `(.venv)` activo:
-
-```powershell
-uvicorn api.main:app --reload
+```bash
+python -m streamlit run ui/app.py
 ```
 
-- Healthcheck: http://127.0.0.1:8000/health
+Abre en el navegador la URL que Streamlit imprime en consola (normalmente `http://127.0.0.1:8501`).
+
+### 7.3) Ejecutar API (FastAPI)
+
+```bash
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
+```
+
 - Swagger UI: http://127.0.0.1:8000/docs
+- Health: http://127.0.0.1:8000/health
 
-Ejemplo de petición:
+---
+
+## 8) Uso de la UI (manual)
+
+### 8.1) Procesar un documento (1 PDF)
+
+1) Sube un PDF.
+2) El sistema mostrará un resumen con:
+   - Documento analizado: 1
+   - Folios: X
+   - Método de extracción (pypdf/docling/vision)
+3) Pulsa “Ejecutar análisis”.
+4) Revisa:
+   - **Resumen**: validez, incidencias, confianza y reglas.
+   - **Extracción / Normalización / Validación / Auditoría**: vista explicada y JSON desplegable.
+
+### 8.2) Procesar un expediente (varios PDFs)
+
+1) Sube varios PDFs.
+2) Se mostrará una tabla “Documentos cargados” con:
+   - Nombre del documento, folios, método, caracteres extraídos.
+3) Pulsa “Ejecutar análisis”.
+4) En la pestaña **Expediente** verás:
+   - Tabla por documento (válido, incidencias, confianza, reglas OK/total).
+   - Selector para ver el detalle por documento (extracción/normalización/validación/auditoría).
+5) El sistema también genera resultados agregados del expediente (campos fusionados + auditoría global).
+
+### 8.3) Procesar PDFs desde una carpeta
+
+1) En la barra lateral, pega la ruta de una carpeta que contenga PDFs (ejemplo):
+   - `C:\Users\TU_USUARIO\Documents\MiCarpetaPDFs`
+2) Pulsa “Cargar PDFs desde carpeta”.
+3) Se cargarán automáticamente todos los `*.pdf` de esa carpeta y se tratarán como expediente.
+
+---
+
+## 9) Configuración (variables de entorno)
+
+Puedes ajustar el comportamiento sin modificar código usando variables de entorno (o un archivo `.env`):
+
+- `LLM_BACKEND` (default: `local`) valores: `local` (Ollama) o `gpt4mini` (OpenAI).
+- `OPENAI_API_KEY` (solo si `LLM_BACKEND=gpt4mini`).
+- `OLLAMA_BASE_URL` (default: `http://localhost:11434`).
+- `OLLAMA_TEXT_MODEL` (default: `llama3.2:3b`).
+- `OLLAMA_CLASSIFIER_MODEL` (default: `llama3.2:3b`).
+- `OLLAMA_VISION_MODEL` (default: `qwen2.5vl:7b`).
+- `OLLAMA_EMBEDDING_MODEL` (default: `nomic-embed-text`).
+- `OLLAMA_TIMEOUT_S` (default: `600`).
+- `ENABLE_PII_REDACTION` (default: `false`).
+
+Ejemplo Windows (PowerShell):
 
 ```powershell
-curl -X POST "http://127.0.0.1:8000/extract" -H "Content-Type: application/json" -d "{ \"text\": \"Escritura de hipoteca. Titular: Juan Pérez García. Entidad financiera: Banco X. Importe del préstamo: 120000. Fecha de firma: 2024-03-10.\" }"
+$env:OLLAMA_TIMEOUT_S = "600"
+$env:ENABLE_PII_REDACTION = "false"
 ```
 
-Para PDF:
+Ejemplo macOS/Linux:
 
-- En Swagger (o cliente) usa `POST /extract_pdf` subiendo un archivo PDF.
-- Parámetro `mode`: `auto` (intenta texto; si no hay, intenta visión) o `vision` (fuerza visión).
-
-Endpoints compatibles con la Propuesta Técnica:
-
-- `POST /upload` (PDF → doc_id)
-- `POST /process` (doc_id o text → resultado del pipeline)
-- `GET /report/{doc_id}` (último resultado cacheado por doc_id)
-
-## Ejecutar la UI (Streamlit)
-
-En una terminal con `(.venv)` activo:
-
-```powershell
-streamlit run ui/app.py
+```bash
+export OLLAMA_TIMEOUT_S=600
+export ENABLE_PII_REDACTION=false
 ```
 
-Uso recomendado en la UI:
+---
 
-1) Pega texto en “Texto de entrada” y pulsa “Ejecutar”, o sube un PDF.
-2) Si el PDF no tiene texto embebido, deja activada la opción de visión (Qwen2.5-VL).
-3) Revisa pestañas:
-   - Extracción: raw + normalizado
-   - Normalización: cambios aplicados
-   - Validación: incidencias de reglas
-   - Auditoría: informe en Markdown + JSON (score + reglas de decisión)
+## 10) Evaluación cuantitativa reproducible (métricas)
 
-## Datos de prueba (Capítulo 6 — Código Fuente y Datos)
+El runner `tools.evaluate` genera:
+- CSV por documento con métricas y tiempos.
+- Resumen agregado `.summary.json`.
+- Mismatches por documento en carpeta `*_mismatches/`.
 
-El repositorio incluye un corpus de prueba bajo `data/sample_docs/` siguiendo la estructura descrita en la propuesta técnica:
+### 10.1) Baseline determinista (sin LLM)
 
-- `data/sample_docs/caso_uso_1_auditoria_hipotecaria/`: PDFs `contrato_hipoteca_esp_*.pdf` + `ground_truth_esp_*.json`.
-- `data/sample_docs/caso_uso_2_auditoria_fiscal/`: PDFs `factura_fiscal_*.pdf` + `factura_fiscal_*.json`.
-- `data/sample_docs/caso_uso_3_kyc_onboarding/`: PDFs `expediente_kyc_*.pdf` + `expediente_kyc_*.json`.
+```bash
+python -m tools.evaluate --include-degraded --backend heuristic --out reports/evaluation_results_heuristic_full.csv
+```
 
-Los esquemas “canónicos” que usa el sistema están en `schemas/`:
-- `schemas/credito_hipotecario.yaml`
-- `schemas/auditoria_fiscal.yaml`
-- `schemas/kyc_onboarding.yaml`
+### 10.2) Evaluación con LLM (Ollama)
 
-## Esquemas YAML
+```bash
+python -m tools.evaluate --include-degraded --backend llm --out reports/evaluation_results_llm_full.csv
+```
 
-El sistema usa el formato extendido (empresa) con `caso_uso`, `documentos`, `campos`, `reglas_decision` e `informe`.
+---
 
-Esquemas del proyecto:
+## 11) Esquemas YAML (configurable sin programar)
 
+Esquemas canónicos:
 - [credito_hipotecario.yaml](schemas/credito_hipotecario.yaml)
 - [auditoria_fiscal.yaml](schemas/auditoria_fiscal.yaml)
 - [kyc_onboarding.yaml](schemas/kyc_onboarding.yaml)
 
-Estructura:
-
+Estructura (alto nivel):
 - `caso_uso`, `version`, `descripcion`
-- `documentos[]` con `tipo` y `campos[]` (`nombre`, `etiqueta`, `tipo_dato`, `requerido`, `patron`, `validacion`)
-- `reglas_decision[]` (expresiones booleanas evaluadas en auditoría)
+- `documentos[]` con `tipo` y `campos[]` (nombre, tipo_dato, requerido, validación, patrón, etc.)
+- `reglas_decision[]` (expresiones booleanas evaluadas de forma segura)
 - `informe` (opciones de salida)
 
-## Soporte PDF (MVP)
+---
 
-La UI permite subir un PDF “nativo” (con texto seleccionable). Al subirlo, se extrae el texto y se ejecuta el pipeline.
+## 12) Git y GitHub (manual rápido)
 
-Si el PDF es escaneado y no tiene texto embebido, se intenta la ruta de visión con `qwen2.5vl:7b` (Ollama) para transcribir imágenes incrustadas.
+### 12.1) Crear rama, commit y push
 
-Para PDFs nativos, si tienes instalada la librería `docling`, el sistema intenta usarla primero (layout → markdown). Si no está instalada, hace fallback a PyPDF.
-
-## Componentes (mapa rápido)
-
-- Clasificador: [classifier.py](agents/classifier.py)
-- Extractor (LLM → JSON): [extractor.py](agents/extractor.py)
-- Normalizador: [normalizer.py](core/normalizer.py)
-- Validador: [validator.py](core/validator.py)
-- Auditor (informe + score + reglas): [auditor.py](agents/auditor.py)
-- Grafo LangGraph: [orchestrator.py](core/orchestrator.py)
-- Loader de schemas: [schema_loader.py](core/schema_loader.py)
-- PDF (texto/visión): [document_loader.py](core/document_loader.py)
-- API: [main.py](api/main.py)
-- UI: [app.py](ui/app.py)
-
-## Checklist de ejecución (paso a paso)
-
-1) Crear y activar `.venv`.
-2) Instalar dependencias (`requirements.txt`).
-3) Instalar y abrir Ollama.
-4) Descargar modelos (`qwen2.5vl:7b`, `llama3.2:3b`, `nomic-embed-text`; `mistral:7b-instruct` opcional).
-5) Ejecutar pruebas (`pytest`).
-6) Levantar UI (`streamlit run ui/app.py`) o API (`uvicorn api.main:app --reload`).
-7) Probar:
-   - Texto pegado (cualquier caso) + “Ejecutar”.
-   - PDF nativo (debería rellenar el texto automáticamente).
-   - PDF escaneado (activar visión).
-
-## Troubleshooting (rápido)
-
-- `python` no reconocido en PowerShell: usa `.\.venv\Scripts\python ...` o `py -m ...`.
-- `&&` no funciona en tu PowerShell: usa `;` para encadenar comandos.
-- Error “could not connect to running instance” en Ollama: abre la app de Ollama y reintenta `ollama list`.
-- Modelo de visión: el tag correcto es `qwen2.5vl:7b` (sin guion entre 5 y vl).
-- `ReadTimeout` en extracción: sube `OLLAMA_TIMEOUT_S` (ej: 600) y/o usa `llama3.2:3b` como modelo de texto (más rápido en CPU).
-- La terminal no para un proceso `python.exe`: mata el PID con `Stop-Process -Id <PID> -Force`.
-- Reglas “NO EVALUABLE”: faltan campos en el contexto (ej: reglas hipotecarias requieren IRPF + extracto; si solo envías extracto, se marca como `REVISAR`).
-
-## Stack recomendado (opcional)
-
-Estas librerías no son obligatorias para correr el MVP, pero alinean el proyecto con la propuesta técnica:
-
-```powershell
-.\.venv\Scripts\python -m pip install docling marker-pdf chromadb ollama
+```bash
+git checkout -b feature/mi-cambio
+git status
+git add .
+git commit -m "Describe el cambio en español"
+git push -u origin feature/mi-cambio
 ```
+
+### 12.2) Mantener tu rama sincronizada con main
+
+```bash
+git fetch origin
+git rebase origin/main
+```
+
+---
+
+## 13) Solución de problemas (FAQ)
+
+- **No conecta con Ollama**: abre Ollama y ejecuta `ollama list`.
+- **Timeout**: sube `OLLAMA_TIMEOUT_S` o usa un modelo de texto más rápido.
+- **Activación de venv en Windows falla**: usa `Set-ExecutionPolicy ... -Scope Process`.
+- **Procesos colgados**: en Windows puedes detener por PID con `Stop-Process -Id <PID> -Force`.

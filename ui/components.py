@@ -125,13 +125,16 @@ def compare_extracted_to_ground_truth(
     }
 
 
-def render_confidence_gauge(*, score: float | None) -> None:
+def render_confidence_gauge(*, score: float | None, key: str | None = None) -> None:
     if score is None:
         return
     try:
         import plotly.graph_objects as go
     except Exception:
-        st.progress(int(max(0.0, min(1.0, float(score))) * 100))
+        try:
+            st.progress(int(max(0.0, min(1.0, float(score))) * 100), key=key)
+        except TypeError:
+            st.progress(int(max(0.0, min(1.0, float(score))) * 100))
         return
     fig = go.Figure(
         go.Indicator(
@@ -150,7 +153,7 @@ def render_confidence_gauge(*, score: float | None) -> None:
         )
     )
     fig.update_layout(height=220, margin={"l": 20, "r": 20, "t": 30, "b": 10})
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key=key)
 
 
 def render_ground_truth_evaluation(
@@ -177,10 +180,14 @@ def render_ground_truth_evaluation(
 
     cmp = compare_extracted_to_ground_truth(extracted=extracted, ground_truth=gt)
     summary = cmp["summary"]
-    st.write(f"Ground truth: {gt_path.as_posix()}")
-    st.write(f"Match rate: {summary['match_rate']:.2%} ({summary['matched']}/{summary['total']})")
-    st.write(
-        "Precision/Recall/F1 (por presencia de campo): "
-        f"{summary['precision']:.2%} / {summary['recall']:.2%} / {summary['f1']:.2%}"
+    st.caption(f"Ground truth: {gt_path.as_posix()}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Campos", f"{summary['total']}")
+    c2.metric("Matches", f"{summary['matched']}")
+    c3.metric("Match rate", f"{summary['match_rate']:.2%}")
+    c4.metric("F1 (campo)", f"{summary['f1']:.2%}")
+    st.dataframe(
+        cmp["rows"],
+        use_container_width=True,
+        hide_index=True,
     )
-    st.dataframe(cmp["rows"], use_container_width=True)

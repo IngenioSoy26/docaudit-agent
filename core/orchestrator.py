@@ -132,6 +132,9 @@ def _build_graph() -> Any:
 
     def node_classify(state: PipelineState) -> PipelineState:
         """Selecciona el schema_name a partir del texto."""
+        existing = state.get("schema_name")
+        if isinstance(existing, str) and existing.strip():
+            return {}
         return {"schema_name": classify_text(state["text"])}
 
     def node_extract(state: PipelineState) -> PipelineState:
@@ -208,6 +211,7 @@ def run_pipeline(
     schemas_dir: str | Path = "schemas",
     pages: list[str] | None = None,
     doc_id: str | None = None,
+    schema_name: str | None = None,
 ) -> dict[str, Any]:
     """Ejecuta el pipeline completo sobre un único documento (texto).
 
@@ -216,6 +220,7 @@ def run_pipeline(
         schemas_dir: Directorio donde residen los YAML.
         pages: Texto por página si está disponible (mejora evidencias RAG).
         doc_id: Identificador del documento para persistencia de RAG.
+        schema_name: Si se indica, fuerza el esquema y omite la clasificación automática.
 
     Returns:
         Resultado completo del pipeline (extracción, normalización, validación, auditoría).
@@ -231,6 +236,8 @@ def run_pipeline(
         state["pages"] = pages
     if doc_id:
         state["doc_id"] = doc_id
+    if schema_name:
+        state["schema_name"] = schema_name
     final_state: PipelineState = app.invoke(state)
     schema = final_state["schema"]
     normalization = final_state["normalization"]
@@ -355,6 +362,11 @@ def run_expediente(
         extracted_payload = extract_from_text(text, doc_schema, pages=pages, doc_id=doc_id)
         fields, details, extracted_raw = _coerce_extraction_payload(extracted_payload)
 
+        doc_normalization = normalize_extracted(fields, doc_schema)
+        doc_normalized = doc_normalization["normalized"]
+        doc_validation = validate_extracted(doc_normalized, doc_schema)
+        doc_report = audit_document(doc_schema, doc_normalized, doc_validation, field_details=details)
+
         # Fusión de campos: prioriza valores no nulos; resuelve conflictos con confianza si existe.
         for k, v in fields.items():
             if v is None and k in merged_fields and merged_fields[k] is not None:
@@ -385,6 +397,9 @@ def run_expediente(
                 },
                 "extracted_raw": extracted_raw,
                 "extracted": fields,
+                "normalization": doc_normalization,
+                "validation": doc_validation,
+                "report": doc_report,
             }
         )
 

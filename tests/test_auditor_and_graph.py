@@ -95,20 +95,19 @@ def test_heuristic_total_gastos_mensuales_from_transferencias():
 def test_credito_hipotecario_rules_evaluable_with_complete_context():
     schema = load_schema("schemas/credito_hipotecario.yaml")
     extracted = {
-        "base_imponible_general": 30000.0,
-        "cuota_liquida_estatal": 2500.0,
-        "nif_emisor": "B12345678",
-        "importe_total_iva": 121.0,
-        "deuda_vigente": 9000.0,
-        "incidencias_activas": False,
-        "total_gastos_mensuales": 700.0,
+        "id_documento": "HIP-0001",
+        "nombre_cliente": "Armida Falcón Trillo",
+        "dni_cliente": "86473212N",
+        "monto_prestamo_eur": 157520.60,
+        "tasa_interes": 3.6,
+        "fecha_emision": "2025-03-08",
     }
     validation = validate_extracted(extracted, schema)
     report = audit_document(schema, extracted, validation)
     rules = {r["id"]: r for r in report["json"]["decision_rules"]}
-    assert rules["R01"]["cumple"] is True
-    assert rules["R02"]["cumple"] is True
-    assert rules["R03"]["cumple"] is True
+    assert rules["H01"]["cumple"] is True
+    assert rules["H02"]["cumple"] is True
+    assert rules["H03"]["cumple"] is True
 
 
 def test_run_expediente_merges_multi_document_into_one_decision(monkeypatch):
@@ -116,13 +115,12 @@ def test_run_expediente_merges_multi_document_into_one_decision(monkeypatch):
 
     def fake_extract(text, schema, pages=None, doc_id=None):
         values_by_field = {
-            "base_imponible_general": 30000.0,
-            "cuota_liquida_estatal": 2500.0,
-            "nif_emisor": "B12345678",
-            "importe_total_iva": 121.0,
-            "deuda_vigente": 9000.0,
-            "incidencias_activas": False,
-            "total_gastos_mensuales": 700.0,
+            "id_documento": "HIP-0001",
+            "nombre_cliente": "Armida Falcón Trillo",
+            "dni_cliente": "86473212N",
+            "monto_prestamo_eur": 157520.60,
+            "tasa_interes": 3.6,
+            "fecha_emision": "2025-03-08",
         }
         fields = {f.name: values_by_field.get(f.name) for f in schema.fields}
         details = {
@@ -141,15 +139,14 @@ def test_run_expediente_merges_multi_document_into_one_decision(monkeypatch):
 
     result = orchestrator.run_expediente(
         [
-            "IRPF modelo 100 casilla 435",
-            "Factura con IVA",
-            "CIRBE incidencias y deuda vigente",
+            "Escritura de préstamo hipotecario - documento 1",
+            "Escritura de préstamo hipotecario - documento 2",
         ],
         schema_name="credito_hipotecario",
     )
 
     assert result["validation"]["valid"] is True
     rules = {r["id"]: r for r in result["report"]["json"]["decision_rules"]}
-    assert rules["R01"]["cumple"] is True
-    assert rules["R02"]["cumple"] is True
-    assert rules["R03"]["cumple"] is True
+    assert rules["H01"]["cumple"] is True
+    assert rules["H02"]["cumple"] is True
+    assert rules["H03"]["cumple"] is True

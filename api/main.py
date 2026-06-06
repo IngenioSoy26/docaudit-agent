@@ -41,6 +41,7 @@ def _cleanup_cache() -> None:
 
 class ExtractRequest(BaseModel):
     """Payload de entrada para extracción por texto."""
+    text: str = Field(..., min_length=1, description="Texto del documento (en bruto).")
 
 
 
@@ -71,6 +72,8 @@ class ProcessRequest(BaseModel):
 @app.get("/health")
 def health() -> dict[str, str]:
     """Healthcheck básico para verificar que la API está levantada."""
+    _cleanup_cache()
+    return {"status": "ok"}
 
 
 @app.post("/extract", response_model=ExtractResponse)

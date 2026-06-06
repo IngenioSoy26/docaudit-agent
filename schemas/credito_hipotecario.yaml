@@ -1,137 +1,59 @@
 caso_uso: credito_hipotecario
 version: "1.0"
 descripcion: >
-  Esquema para evaluación de solvencia hipotecaria. Integra IRPF, facturas y CIRBE, y permite
-  procesar documentos de soporte (p.ej. extractos bancarios) con reglas de decisión.
+  Esquema para auditoría documental de contrato/escritura de préstamo hipotecario (PDF).
+  Define campos básicos extraíbles y reglas de coherencia para revisión por analista.
 
 documentos:
-  - tipo: ESCRITURA_PRESTAMO_HIPOTECARIO
+  - tipo: CONTRATO_HIPOTECA
     descripcion: "Contrato/escritura de préstamo hipotecario"
     campos:
-      - nombre: nombre_prestatario
-        etiqueta: "Nombre y apellidos del prestatario / deudor"
+      - nombre: id_documento
+        etiqueta: "Identificador interno del documento"
+        tipo_dato: string
+        requerido: false
+      - nombre: nombre_cliente
+        etiqueta: "Nombre y apellidos del cliente"
         tipo_dato: string
         requerido: true
-      - nombre: dni_prestatario
-        etiqueta: "Documento Nacional de Identidad (DNI) o NIE"
+      - nombre: dni_cliente
+        etiqueta: "Documento de identidad (DNI/NIE)"
         tipo_dato: string
+        requerido: true
         patron: "^[XYZ0-9][0-9]{7}[A-Z]$"
-        requerido: true
-      - nombre: entidad_financiera
-        etiqueta: "Entidad prestamista / Banco"
-        tipo_dato: string
-        requerido: true
-      - nombre: capital_prestamo
-        etiqueta: "Capital principal del préstamo concedido"
+      - nombre: monto_prestamo_eur
+        etiqueta: "Importe del préstamo (EUR)"
         tipo_dato: float
         requerido: true
         validacion:
           rango_min: 0.0
-      - nombre: tasa_interes_nominal
-        etiqueta: "Tipo de Interés Nominal (TIN) aplicable"
+      - nombre: tasa_interes
+        etiqueta: "Tipo de interés anual (%)"
         tipo_dato: float
         requerido: true
         validacion:
           rango_min: 0.0
-      - nombre: plazo_amortizacion_anos
-        etiqueta: "Plazo total pactado para la devolución (en años)"
-        tipo_dato: int
+      - nombre: fecha_emision
+        etiqueta: "Fecha de emisión / firma"
+        tipo_dato: date
         requerido: true
-        validacion:
-          rango_min: 1
-      - nombre: comision_apertura
-        etiqueta: "Comisión de apertura calculada sobre el capital"
-        tipo_dato: float
-        requerido: false
-        validacion:
-          rango_min: 0.0
-
-  - tipo: IRPF
-    descripcion: "Declaración IRPF del solicitante"
-    campos:
-      - nombre: base_imponible_general
-        etiqueta: "Base imponible general (casilla 435)"
-        tipo_dato: float
-        requerido: true
-        validacion:
-          rango_min: 0.0
-      - nombre: cuota_liquida_estatal
-        etiqueta: "Cuota líquida estatal (casilla 570)"
-        tipo_dato: float
-        requerido: false
-        validacion:
-          rango_min: 0.0
-
-  - tipo: FACTURA
-    descripcion: "Factura de gasto recurrente"
-    campos:
-      - nombre: nif_emisor
-        etiqueta: "NIF del emisor"
-        tipo_dato: string
-        requerido: true
-        patron: "^[A-Z0-9]{9}$"
-      - nombre: importe_total_iva
-        etiqueta: "Importe total con IVA"
-        tipo_dato: float
-        requerido: true
-        validacion:
-          rango_min: 0.0
-
-  - tipo: CIRBE
-    descripcion: "Informe CIRBE"
-    campos:
-      - nombre: deuda_vigente
-        etiqueta: "Deuda vigente"
-        tipo_dato: float
-        requerido: true
-        validacion:
-          rango_min: 0.0
-      - nombre: incidencias_activas
-        etiqueta: "Incidencias activas"
-        tipo_dato: boolean
-        requerido: true
-
-  - tipo: EXTRACTO_BANCARIO
-    descripcion: "Extracto bancario"
-    campos:
-      - nombre: total_gastos_mensuales
-        etiqueta: "Total gastos mensuales"
-        tipo_dato: float
-        requerido: false
-        validacion:
-          rango_min: 0.0
 
 reglas_decision:
   - id: H01
-    descripcion: "Límite de comisión de apertura (<= 2% del capital)"
-    expresion: "coalesce(comision_apertura, 0) <= (capital_prestamo * 0.02)"
-    severidad: advertencia
-    normativa: "Ley 5/2019, reguladora de los contratos de crédito inmobiliario (LCCI)"
+    descripcion: "Importe de préstamo positivo"
+    expresion: "monto_prestamo_eur > 0"
+    severidad: critica
+    normativa: "Coherencia documental (control interno)"
   - id: H02
-    descripcion: "TIN en rango comercial (0-15%)"
-    expresion: "tasa_interes_nominal > 0.00 and tasa_interes_nominal <= 15.00"
+    descripcion: "Tipo de interés en rango razonable (0-20%)"
+    expresion: "tasa_interes >= 0 and tasa_interes <= 20"
     severidad: advertencia
-    normativa: "Criterio de coherencia de mercado (no normativa específica)"
+    normativa: "Coherencia documental (control interno)"
   - id: H03
-    descripcion: "Plazo máximo de amortización (<= 30 años)"
-    expresion: "plazo_amortizacion_anos > 0 and plazo_amortizacion_anos <= 30"
+    descripcion: "Documento con identificador presente"
+    expresion: "id_documento != null and id_documento != ''"
     severidad: advertencia
-    normativa: "Criterio de mercado (no normativa específica)"
-  - id: R01
-    descripcion: "Renta anual mínima"
-    expresion: "base_imponible_general >= 24000"
-    severidad: critica
-    normativa: "Política interna de riesgo (umbral configurable)"
-  - id: R02
-    descripcion: "Ratio deuda/renta máximo 35%"
-    expresion: "deuda_vigente / base_imponible_general <= 0.35"
-    severidad: advertencia
-    normativa: "Política interna de riesgo (ratio DTI/DTI-like)"
-  - id: R03
-    descripcion: "Sin incidencias activas en CIRBE"
-    expresion: "incidencias_activas == false"
-    severidad: critica
-    normativa: "Banco de España — CIRBE (control de incidencias)"
+    normativa: "Trazabilidad (control interno)"
 
 informe:
   formato: ["json", "markdown"]

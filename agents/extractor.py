@@ -40,16 +40,9 @@ def _schema_instructions(schema: DocSchema) -> str:
     lines.append("No incluyas comentarios (// o /* */) ni texto fuera del JSON.")
     lines.append("Para números: NO uses separadores de miles (ni '.' ni ','). Usa '.' solo como separador decimal.")
     lines.append("Si el número aparece en formato local (ej: 5.489,11), envíalo como string.")
-    lines.append("Devuelve una lista JSON de objetos CampoExtraido, uno por campo del esquema.")
-    lines.append("CampoExtraido = {")
-    lines.append('  "nombre": string,')
-    lines.append('  "valor": string|number|boolean|null,')
-    lines.append('  "confianza": number (0.0-1.0),')
-    lines.append('  "evidencia_textual": string (puede ser "" y debe ser corto),')
-    lines.append('  "pagina": integer')
-    lines.append("}")
-    lines.append('Para "evidencia_textual", usa "" (será completado con RAG).')
-    lines.append("Los nombres deben coincidir exactamente con estos campos:")
+    lines.append("Devuelve un ÚNICO objeto JSON (dict) con claves=nombre_del_campo y valores=valor_extraído.")
+    lines.append('Formato: { "campo_1": valor, "campo_2": valor, ... }')
+    lines.append("Los nombres de las claves deben coincidir exactamente con estos campos:")
     for f in schema.fields:
         enum_vals: list[str] | None = None
         for r in f.rules:
@@ -63,7 +56,6 @@ def _schema_instructions(schema: DocSchema) -> str:
         else:
             lines.append(f'- "{f.name}" ({f.type}) requerido={f.required}')
     lines.append("Si no encuentras un valor, usa null.")
-    lines.append("Si no puedes determinar la página, usa 1.")
     return "\n".join(lines)
 
 
@@ -341,28 +333,44 @@ def extract_from_text(
     response = llm.invoke(prompt, stream=False)
     raw = response.content if isinstance(response.content, str) else str(response.content)
     allowed = {f.name for f in schema.fields}
+    allowed_norm: dict[str, str] = {}
+    for name in allowed:
+        k = re.sub(r"[^a-z0-9]+", "", name.casefold())
+        allowed_norm[k] = name
     parsed = _safe_json_parse(raw)
-
-    if isinstance(parsed, dict):
-        cleaned: dict[str, Any] = {k: v for k, v in parsed.items() if k in allowed}
-        for key in allowed:
-            cleaned.setdefault(key, None)
-        return cleaned
 
     fields: dict[str, Any] = {}
     details: dict[str, Any] = {}
-    if isinstance(parsed, list):
+    if isinstance(parsed, dict):
+        for k, v in parsed.items():
+            if not isinstance(k, str):
+                continue
+            if k in allowed:
+                fields[k] = v
+                continue
+            kn = re.sub(r"[^a-z0-9]+", "", k.casefold())
+            mapped = allowed_norm.get(kn)
+            if mapped:
+                fields[mapped] = v
+    elif isinstance(parsed, list):
         for item in parsed:
             if not isinstance(item, dict):
                 continue
             name = item.get("nombre")
-            if not isinstance(name, str) or name not in allowed:
+            if not isinstance(name, str):
+                continue
+            if name not in allowed:
+                nn = re.sub(r"[^a-z0-9]+", "", name.casefold())
+                mapped = allowed_norm.get(nn)
+                if mapped:
+                    name = mapped
+                else:
+                    continue
                 continue
             value = item.get("valor")
             fields[name] = value
             details[name] = {
                 "nombre": name,
-                "valor": value,
                 "confianza": item.get("confianza"),
                 "evidencia_textual": item.get("evidencia_textual"),
                 "pagina": item.get("pagina"),
@@ -375,33 +383,36 @@ def extract_from_text(
             {"nombre": key, "valor": fields[key], "confianza": None, "evidencia_textual": "", "pagina": 1},
         )
 
-    chunks = build_chunks_from_pages(pages) if pages else build_chunks_from_text(text)
-    names: list[str] = []
-    queries: list[str] = []
-    values: list[Any] = []
-    for f in schema.fields:
-        name = f.name
-        label = f.description or name
-        value = fields.get(name)
-        q = f"{label}"
-        if isinstance(value, str) and value.strip():
-            q = f"{label}: {value}"
-        names.append(name)
-        queries.append(q)
-        values.append(value)
+    try:
+        chunks = build_chunks_from_pages(pages) if pages else build_chunks_from_text(text)
+        names: list[str] = []
+        queries: list[str] = []
+        values: list[Any] = []
+        for f in schema.fields:
+            name = f.name
+            label = f.description or name
+            value = fields.get(name)
+            q = f"{label}"
+            if isinstance(value, str) and value.strip():
+                q = f"{label}: {value}"
+            names.append(name)
+            queries.append(q)
+            values.append(value)
 
-    hits_by_query = retrieve_best_evidence_batch(queries, chunks, top_k=1, doc_id=doc_id)
-    for idx, name in enumerate(names):
-        hits = hits_by_query[idx] if idx < len(hits_by_query) else []
-        if not hits:
-            continue
-        hit = hits[0]
-        meta = hit.get("metadata") or {}
-        if details.get(name) is None or not isinstance(details.get(name), dict):
-            details[name] = {"nombre": name, "valor": values[idx], "confianza": None, "evidencia_textual": "", "pagina": 1}
-        details[name]["evidencia_textual"] = hit.get("text") or details[name].get("evidencia_textual") or ""
-        page = meta.get("page")
-        if isinstance(page, int) and page > 0:
-            details[name]["pagina"] = page
+        hits_by_query = retrieve_best_evidence_batch(queries, chunks, top_k=1, doc_id=doc_id)
+        for idx, name in enumerate(names):
+            hits = hits_by_query[idx] if idx < len(hits_by_query) else []
+            if not hits:
+                continue
+            hit = hits[0]
+            meta = hit.get("metadata") or {}
+            if details.get(name) is None or not isinstance(details.get(name), dict):
+                details[name] = {"nombre": name, "valor": values[idx], "confianza": None, "evidencia_textual": "", "pagina": 1}
+            details[name]["evidencia_textual"] = hit.get("text") or details[name].get("evidencia_textual") or ""
+            page = meta.get("page")
+            if isinstance(page, int) and page > 0:
+                details[name]["pagina"] = page
+    except Exception:
+        pass
 
     return {"fields": fields, "details": details}
