@@ -12,6 +12,9 @@ Permite:
 import json
 import hashlib
 import sys
+import time
+import psutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +22,50 @@ import streamlit as st
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LOGS_FOLDER = PROJECT_ROOT / "test_data" / "execution_logs"
+LOGS_FOLDER.mkdir(parents=True, exist_ok=True)
+
 if str(PROJECT_ROOT) not in sys.path:
     # Streamlit ejecuta el script como módulo; esto asegura imports relativos al proyecto.
     sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def save_execution_log(
+    file_name: str,
+    file_type: str,
+    method: str,
+    processing_time: float,
+    ram_used_mb: float,
+    extracted_fields: dict,
+    full_result: dict
+) -> None:
+    """
+    Guarda un registro de la ejecución en un archivo JSON para la tesis.
+    
+    Args:
+        file_name: Nombre del archivo procesado
+        file_type: "native_pdf", "scanned_pdf", "image"
+        method: Método de extracción usado ("pypdf", "easyocr", "qwen25-vl")
+        processing_time: Tiempo de procesamiento en segundos
+        ram_used_mb: RAM usada en MB
+        extracted_fields: Campos extraídos
+        full_result: Resultado completo del pipeline
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    log_data = {
+        "timestamp": datetime.now().isoformat(),
+        "file_name": file_name,
+        "file_type": file_type,
+        "method": method,
+        "processing_time_seconds": round(processing_time, 4),
+        "ram_used_mb": round(ram_used_mb, 2),
+        "extracted_fields": extracted_fields,
+        "full_result": full_result
+    }
+    
+    log_file = LOGS_FOLDER / f"log_{timestamp}_{file_name.replace('.', '_')}.json"
+    with open(log_file, "w", encoding="utf-8") as f:
+        json.dump(log_data, f, ensure_ascii=False, indent=2)
 
 from core.schema_models import DocSchema  # noqa: E402
 import core.schema_loader as schema_loader  # noqa: E402
@@ -288,8 +332,16 @@ with top_left:
 
 if run_clicked:
     try:
+        # Iniciar medición de tiempo y RAM
+        start_time = time.perf_counter()
+        process = psutil.Process()
+        ram_start = process.memory_info().rss / (1024 * 1024)  # RAM inicial en MB
+        
         with st.spinner("Ejecutando pipeline (extracción → normalización → validación → auditoría)..."):
             expediente_texts = st.session_state.get("expediente_texts")
+            uploaded_names = st.session_state.get("uploaded_names", [])
+            expediente_meta = st.session_state.get("expediente_meta", [])
+            
             if isinstance(expediente_texts, list) and len(expediente_texts) >= 2:
                 pages_by_doc = st.session_state.get("expediente_pages")
                 doc_ids = st.session_state.get("expediente_doc_ids")
@@ -308,6 +360,67 @@ if run_clicked:
                     doc_id=doc_id if isinstance(doc_id, str) else None,
                     schema_name=None if schema_choice == "Auto" else schema_choice,
                 )
+        
+        # Calcular tiempo y RAM final
+        end_time = time.perf_counter()
+        ram_end = process.memory_info().rss / (1024 * 1024)
+        processing_time = end_time - start_time
+        ram_used = ram_end - ram_start
+        
+        # Guardar registros
+        if "documents" in result:
+            # Si es un expediente con múltiples documentos
+            for i, doc_result in enumerate(result.get("documents", [])):
+                doc_index = doc_result.get("doc_index", i)
+                file_name = uploaded_names[i] if i < len(uploaded_names) else f"document_{doc_index}.pdf"
+                doc_meta = expediente_meta[i] if i < len(expediente_meta) else {}
+                method = doc_meta.get("metodo", "pypdf")
+                
+                # Determinar tipo de archivo
+                if method == "easyocr":
+                    file_type = "scanned_pdf"
+                elif method == "vision" or method == "ollama_vision":
+                    file_type = "scanned_pdf"
+                else:
+                    file_type = "native_pdf"
+                
+                extracted_fields = doc_result.get("extracted", {}).get("fields", {})
+                save_execution_log(
+                    file_name=file_name,
+                    file_type=file_type,
+                    method=method,
+                    processing_time=processing_time / len(result.get("documents", [1])),  # Dividir tiempo por documento
+                    ram_used_mb=ram_used / len(result.get("documents", [1])),
+                    extracted_fields=extracted_fields,
+                    full_result=doc_result
+                )
+        else:
+            # Si es un solo documento
+            file_name = uploaded_names[0] if uploaded_names else "document_1.pdf"
+            doc_meta = expediente_meta[0] if expediente_meta else {}
+            method = doc_meta.get("metodo", "pypdf")
+            
+            # Determinar tipo de archivo
+            if method == "easyocr":
+                file_type = "scanned_pdf"
+            elif method == "vision" or method == "ollama_vision":
+                file_type = "scanned_pdf"
+            else:
+                file_type = "native_pdf"
+            
+            extracted_fields = result.get("extracted", {}).get("fields", {})
+            save_execution_log(
+                file_name=file_name,
+                file_type=file_type,
+                method=method,
+                processing_time=processing_time,
+                ram_used_mb=ram_used,
+                extracted_fields=extracted_fields,
+                full_result=result
+            )
+        
+        # Mostrar mensaje de éxito de logging
+        st.success(f"✅ Registro guardado en: `{LOGS_FOLDER}")
     except Exception as e:
         st.error("Falló la extracción: el modelo devolvió una respuesta no válida o hubo un problema de conexión.")
         st.exception(e)
