@@ -8,6 +8,7 @@ venv/
 .env
 .chroma/
 reports/
+reporte_evaluacion.md
 
 # Jupyter Notebooks
 .ipynb_checkpoints
