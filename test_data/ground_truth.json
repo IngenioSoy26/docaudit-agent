@@ -1,0 +1,33 @@
+
+{
+  "test_cases": [
+    {
+      "id": "test_001",
+      "name": "Factura demo 1",
+      "type": "native",
+      "pdf_path": "native/factura_demo_1.pdf",
+      "ground_truth": {
+        "razon_social_emisor": "Proveedor Demo S.L.",
+        "nif_emisor": "A1234567B",
+        "num_factura": "FAC-2026-0001",
+        "fecha_expedicion": "2026-01-15",
+        "base_imponible": 100.0,
+        "tipo_iva": 21,
+        "importe_total": 121.0
+      }
+    },
+    {
+      "id": "test_002",
+      "name": "Contrato hipotecario demo 1",
+      "type": "native",
+      "pdf_path": "native/contrato_hipotecario_1.pdf",
+      "ground_truth": {
+        "nombre_cliente": "Armida Falcón Trillo",
+        "dni_cliente": "86473212N",
+        "monto_prestamo_eur": 157520.60,
+        "tasa_interes": 3.6,
+        "fecha_emision": "2025-03-08"
+      }
+    }
+  ]
+}
