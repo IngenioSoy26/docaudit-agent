@@ -74,6 +74,7 @@ def _downscale_image_bytes(data: bytes) -> bytes:
     """Reduce resolución/calidad de una imagen para acelerar inferencia de visión (CPU).
 
     Si PIL no está disponible o ocurre un error, devuelve los bytes originales.
+    Ajustes para Qwen2.5-VL: resolución balanceada para velocidad y calidad.
     """
     try:
         from PIL import Image
@@ -84,10 +85,12 @@ def _downscale_image_bytes(data: bytes) -> bytes:
         with Image.open(io.BytesIO(data)) as im:
             im = im.convert("RGB")
             w, h = im.size
-            max_dim = int(getattr(settings, "ollama_vision_max_dim", 1280) or 1280)
+            # Resolución balanceada para velocidad y calidad con Qwen2.5-VL
+            max_dim = int(getattr(settings, "ollama_vision_max_dim", 1024) or 1024)
             if max(w, h) > max_dim and max_dim > 0:
                 im.thumbnail((max_dim, max_dim))
-            quality = int(getattr(settings, "ollama_vision_jpeg_quality", 70) or 70)
+            # Calidad JPEG balanceada
+            quality = int(getattr(settings, "ollama_vision_jpeg_quality", 75) or 75)
             quality = max(30, min(95, quality))
             out = io.BytesIO()
             im.save(out, format="JPEG", quality=quality, optimize=True)
@@ -120,40 +123,86 @@ def extract_images_from_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
 
 
 def extract_text_from_scanned_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
-    """Extrae texto desde un PDF escaneado usando un modelo de visión en Ollama.
+    """Extrae texto desde un PDF escaneado usando EasyOCR (principal, rápido y preciso)
+    y Qwen2.5-VL como fallback para casos difíciles.
 
-    Este método:
-    - extrae imágenes por página,
-    - envía cada imagen a un modelo de visión (Qwen2.5-VL por defecto),
-    - devuelve texto plano (más `page_texts` para RAG/evidencias).
+    Ideal para tesis: EasyOCR es referente académico en OCR local.
     """
     images = extract_images_from_pdf_bytes(pdf_bytes)
     pages = len(PdfReader(io.BytesIO(pdf_bytes)).pages)
     if not images:
         return {"text": "", "pages": pages, "images": 0}
 
-    prompt = (
-        "Extrae y transcribe SOLO la información útil para auditoría y extracción de campos. "
-        "Prioriza: nombres, identificadores (DNI/NIF/CIF), fechas, importes, porcentajes, direcciones, IBAN y títulos de secciones. "
-        "Evita transcribir párrafos legales largos repetitivos. "
-        "No inventes información. Si no se ve, déjalo en blanco. "
-        "Devuelve texto plano con saltos de línea."
-    )
+    page_texts = [""] * pages
+    texts = []
+    used_fallback = False
 
-    texts: list[str] = []
-    page_texts: list[str] = [""] * pages
-    for img in images:
-        content = chat_with_images(prompt, [img["data"]])
-        content = content.strip()
-        if content:
-            texts.append(content)
-            page_idx = int(img.get("page") or 1) - 1
-            if 0 <= page_idx < len(page_texts):
-                page_texts[page_idx] = content
+    # -------------------------------
+    # PASO 1: EasyOCR (principal, rápido)
+    # -------------------------------
+    try:
+        import easyocr
+        from PIL import Image
+
+        # Inicializamos lector de EasyOCR para español (y inglés como fallback)
+        reader = easyocr.Reader(['es', 'en'], gpu=False)  # gpu=False para compatibilidad universal
+
+        for img in images:
+            try:
+                # Cargamos la imagen
+                img_pil = Image.open(io.BytesIO(img["data"]))
+                # Extraemos texto con EasyOCR
+                results = reader.readtext(img_pil, detail=0)  # detail=0 devuelve solo texto
+                page_text = "\n".join(results).strip()
+
+                if page_text:
+                    texts.append(page_text)
+                    page_idx = img["page"] - 1
+                    if 0 <= page_idx < len(page_texts):
+                        page_texts[page_idx] = page_text
+
+            except Exception as e:
+                print(f"Error en EasyOCR para página {img['page']}: {e}")
+                continue
+
+    except ImportError:
+        print("EasyOCR no está instalado, usando fallback Qwen2.5-VL")
+        used_fallback = True
+    except Exception as e:
+        print(f"Error general en EasyOCR: {e}, usando fallback Qwen2.5-VL")
+        used_fallback = True
+
+    # -------------------------------
+    # PASO 2: Fallback Qwen2.5-VL si EasyOCR no extrajo nada
+    # -------------------------------
+    if not any(texts) or used_fallback:
+        print("Usando fallback Qwen2.5-VL para mejor calidad en casos difíciles")
+        prompt = (
+            "Extrae el texto visible de la imagen. Incluye nombres, fechas, números, importes y direcciones. "
+            "No agregues comentarios. Devuelve solo el texto extraído."
+        )
+
+        for img in images:
+            try:
+                content = chat_with_images(prompt, [img["data"]])
+                content = content.strip()
+                if content:
+                    texts.append(content)
+                    page_idx = img["page"] - 1
+                    if 0 <= page_idx < len(page_texts):
+                        page_texts[page_idx] = content
+            except Exception as e:
+                print(f"Error en Qwen2.5-VL para página {img['page']}: {e}")
+                continue
+
+        final_method = "ollama_vision"
+    else:
+        final_method = "easyocr"
 
     return {
         "text": "\n\n".join(texts).strip(),
         "pages": pages,
         "page_texts": page_texts,
         "images": len(images),
+        "method": final_method
     }

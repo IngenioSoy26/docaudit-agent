@@ -120,8 +120,7 @@ def _load_pdfs_from_uploads(uploaded: list[Any]) -> list[dict[str, Any]]:
 
 with st.sidebar:
     st.subheader("Ejecución")
-    st.subheader("Ejecución")
-    use_vision = st.checkbox("Si el PDF no tiene texto, intentar con visión (Qwen2.5-VL)", value=True)
+    use_vision = st.checkbox("Si el PDF no tiene texto, intentar con OCR", value=True)
     schema_choice = st.selectbox(
         "Caso de uso",
         options=["Auto", "credito_hipotecario", "auditoria_fiscal", "kyc_onboarding"],
@@ -195,16 +194,16 @@ if pdf_items:
         if not text and use_vision:
             if extract_text_from_scanned_pdf_bytes is None:
                 st.error(
-                    "No está disponible la función de visión. Detén y vuelve a iniciar Streamlit "
+                    "No está disponible la función de OCR. Detén y vuelve a iniciar Streamlit "
                     "para recargar los módulos, y verifica que tu entorno tenga el código actualizado."
                 )
             else:
-                with st.spinner(f"Extrayendo texto con visión (Qwen2.5-VL) — {name}..."):
+                with st.spinner(f"Extrayendo texto con OCR — {name}..."):
                     extracted_v = extract_text_from_scanned_pdf_bytes(pdf_bytes)
                 text = extracted_v.get("text") or ""
                 pages = extracted_v.get("page_texts") if isinstance(extracted_v.get("page_texts"), list) else pages
                 pages_n = extracted_v.get("pages") or pages_n
-                method = "vision"
+                method = extracted_v.get("method") or "vision"
 
         expediente_texts.append(text)
         expediente_pages.append(pages)

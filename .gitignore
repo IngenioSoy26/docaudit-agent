@@ -18,3 +18,7 @@ Thumbs.db
 
 # Data
 # Se versiona el corpus de prueba anonimizado bajo data/sample_docs/ según la propuesta técnica.
+
+# Scripts locales
+*.bat
+
