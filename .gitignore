@@ -20,6 +20,8 @@ Thumbs.db
 
 # Data
 # Se versiona el corpus de prueba anonimizado bajo data/sample_docs/ según la propuesta técnica.
+temp_plots/
+test_data/tmp_image_ocr_check.txt
 
 # Scripts locales
 *.bat
