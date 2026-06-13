@@ -25,18 +25,60 @@ documentos:
         tipo_dato: string
         requerido: true
         patron: "^[XYZ0-9][0-9]{7}[A-Z]$"
+      - nombre: nacionalidad
+        etiqueta: "Nacionalidad declarada"
+        tipo_dato: string
+        requerido: false
+      - nombre: pais_residencia
+        etiqueta: "País de residencia"
+        tipo_dato: string
+        requerido: false
       - nombre: fecha_nacimiento
         etiqueta: "Fecha de nacimiento del titular"
         tipo_dato: date
         requerido: true
+      - nombre: fecha_expedicion
+        etiqueta: "Fecha de expedición del documento de identidad"
+        tipo_dato: date
+        requerido: false
       - nombre: fecha_caducidad
         etiqueta: "Fecha de caducidad del documento"
         tipo_dato: date
         requerido: true
+      - nombre: autoridad_emisora
+        etiqueta: "Autoridad emisora del documento"
+        tipo_dato: string
+        requerido: false
       - nombre: domicilio_comprobante
         etiqueta: "Dirección postal del comprobante"
         tipo_dato: string
         requerido: true
+      - nombre: actividad_economica
+        etiqueta: "Actividad económica o profesión declarada"
+        tipo_dato: string
+        requerido: false
+      - nombre: proposito_relacion
+        etiqueta: "Propósito o naturaleza de la relación de negocio"
+        tipo_dato: string
+        requerido: false
+      - nombre: pep
+        etiqueta: "Persona con responsabilidad pública (PEP)"
+        tipo_dato: bool
+        requerido: false
+      - nombre: titular_real_identificado
+        etiqueta: "Titular real identificado"
+        tipo_dato: bool
+        requerido: false
+      - nombre: coincidencia_sanciones
+        etiqueta: "Coincidencia positiva en listas de sanciones"
+        tipo_dato: bool
+        requerido: false
+      - nombre: nivel_riesgo
+        etiqueta: "Nivel de riesgo AML/KYC"
+        tipo_dato: string
+        requerido: false
+        validacion:
+          valores_permitidos: ["bajo", "medio", "alto"]
 
 reglas_decision:
   - id: RK01
@@ -54,9 +96,35 @@ reglas_decision:
     expresion: "num_documento != 'No encontrado'"
     severidad: advertencia
     normativa: "Ley 10/2010 (PBC/FT) — diligencia debida (SEPBLAC)"
+  - id: RK04
+    descripcion: "Fecha de expedición no futura cuando está informada"
+    expresion: "fecha_expedicion == null or fecha_expedicion <= fecha_actual"
+    severidad: advertencia
+    normativa: "Ley 10/2010 y RD 304/2014 — identificación formal"
+  - id: RK05
+    descripcion: "Sin coincidencia positiva en listas de sanciones"
+    expresion: "coincidencia_sanciones == null or coincidencia_sanciones == false"
+    severidad: critica
+    normativa: "Ley 10/2010 (PBC/FT) — diligencia debida reforzada"
+  - id: RK06
+    descripcion: "Si es PEP, el riesgo no debe quedar en nivel bajo"
+    expresion: "pep != true or nivel_riesgo == null or nivel_riesgo in ['medio', 'alto']"
+    severidad: advertencia
+    normativa: "Ley 10/2010 (PBC/FT) — medidas reforzadas para PEP"
+  - id: RK07
+    descripcion: "Titular real identificado cuando el dato se informa"
+    expresion: "titular_real_identificado == null or titular_real_identificado == true"
+    severidad: info
+    normativa: "Ley 10/2010 (PBC/FT) — identificación del titular real"
+  - id: RK08
+    descripcion: "Propósito de la relación informado cuando está presente"
+    expresion: "proposito_relacion == null or proposito_relacion != ''"
+    severidad: info
+    normativa: "Ley 10/2010 (PBC/FT) — propósito e índole de la relación de negocio"
 
 informe:
   formato: ["json", "markdown"]
+  incluir_evidencias: true
   incluir_score_confianza: true
   nivel_detalle: resumen
   idioma: es

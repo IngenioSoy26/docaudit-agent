@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0006",
+  "nombre_cliente": "Maxi Hidalgo Rivas",
+  "dni_cliente": "08575358Y",
+  "monto_prestamo_eur": 171467.77,
+  "tasa_interes": 4.88,
+  "tae": 29.5,
+  "plazo_meses": 0,
+  "cuota_mensual_eur": 1393.2,
+  "ingresos_mensuales_eur": 2580,
+  "gastos_mensuales_eur": 1370,
+  "ratio_endeudamiento": 0.58,
+  "comision_apertura_eur": 1886.15,
+  "fein_entregada": false,
+  "fiae_entregada": false,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2023-08-28"
+}

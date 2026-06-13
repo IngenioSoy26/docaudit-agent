@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0005",
+  "nombre_cliente": "Natanael Luján Navarro",
+  "dni_cliente": "38765973J",
+  "monto_prestamo_eur": 372300.52,
+  "tasa_interes": 4.55,
+  "tae": 5.75,
+  "plazo_meses": 300,
+  "cuota_mensual_eur": 1514.02,
+  "ingresos_mensuales_eur": 5318.58,
+  "gastos_mensuales_eur": 925,
+  "ratio_endeudamiento": 0.39,
+  "comision_apertura_eur": 1675.35,
+  "fein_entregada": true,
+  "fiae_entregada": true,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2024-08-18"
+}

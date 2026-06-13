@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Iris",
+  "primer_apellido": "Vizcaíno",
+  "segundo_apellido": "Cervera",
+  "num_documento": "55097764W",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "2010-04-28",
+  "fecha_expedicion": "2026-06-29",
+  "fecha_caducidad": "2026-04-26",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Glorieta de Natanael Casanovas 98, Tarragona, 08650",
+  "actividad_economica": "Actividad no verificada",
+  "proposito_relacion": "",
+  "pep": true,
+  "titular_real_identificado": false,
+  "coincidencia_sanciones": true,
+  "nivel_riesgo": "bajo"
+}

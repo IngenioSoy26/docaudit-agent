@@ -114,9 +114,10 @@ def run_evaluation(
     Ejecuta la evaluación completa sobre una lista de casos de prueba.
     
     test_cases es una lista de diccionarios con:
-        - "text" | "pdf_bytes": texto o bytes del PDF
+        - "text" | "pdf_bytes" | "image_bytes": contenido a evaluar
+        - "input_kind": "text", "pdf_native", "pdf_scanned" o "image" (opcional)
         - "ground_truth": diccionario con los valores esperados
-        - "type": "native" o "degraded" para clasificar
+        - "type": "native", "degraded" o "image" para clasificar
     """
     latencies = []
     ram_peaks = []
@@ -129,9 +130,21 @@ def run_evaluation(
         # Preparar entrada
         if "text" in case:
             input_text = case["text"]
+        elif "image_bytes" in case:
+            from core.document_loader import extract_text_from_image_bytes
+
+            extracted = extract_text_from_image_bytes(case["image_bytes"])
+            input_text = extracted.get("text", "")
         else:
-            from core.document_loader import extract_text_from_pdf_bytes
-            extracted = extract_text_from_pdf_bytes(case["pdf_bytes"])
+            input_kind = case.get("input_kind")
+            if input_kind == "pdf_scanned":
+                from core.document_loader import extract_text_from_scanned_pdf_bytes
+
+                extracted = extract_text_from_scanned_pdf_bytes(case["pdf_bytes"])
+            else:
+                from core.document_loader import extract_text_from_pdf_bytes
+
+                extracted = extract_text_from_pdf_bytes(case["pdf_bytes"])
             input_text = extracted.get("text", "")
 
         ground_truth = case["ground_truth"]

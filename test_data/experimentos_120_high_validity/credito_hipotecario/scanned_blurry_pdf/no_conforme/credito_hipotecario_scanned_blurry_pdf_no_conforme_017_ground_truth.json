@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0007",
+  "nombre_cliente": "Pelayo Vilalta Hierro",
+  "dni_cliente": "09801740Q",
+  "monto_prestamo_eur": 244927.18,
+  "tasa_interes": 3.41,
+  "tae": 29.5,
+  "plazo_meses": 0,
+  "cuota_mensual_eur": 1436.4,
+  "ingresos_mensuales_eur": 2660,
+  "gastos_mensuales_eur": 1435,
+  "ratio_endeudamiento": 0.58,
+  "comision_apertura_eur": 2694.2,
+  "fein_entregada": false,
+  "fiae_entregada": false,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2024-10-24"
+}

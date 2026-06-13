@@ -1,0 +1,35 @@
+{
+  "id": "kyc_onboarding_scanned_blurry_pdf_no_conforme_008",
+  "schema_name": "kyc_onboarding",
+  "variant": "scanned_blurry_pdf",
+  "variant_description": "PDF escaneado, borroso, con ruido o compresion",
+  "compliance_expected": "no_conforme",
+  "country": "Espana",
+  "legal_basis": [
+    "Espana - RGPD art. 5",
+    "Espana - RGPD art. 25",
+    "Espana - RGPD art. 22",
+    "Espana - Ley 10/2010 PBC/FT",
+    "Espana - RD 304/2014"
+  ],
+  "source_pdf_path": "data/sample_docs/caso_uso_3_kyc_onboarding/expediente_kyc_7.pdf",
+  "source_ground_truth_path": "data/sample_docs/caso_uso_3_kyc_onboarding/expediente_kyc_7.json",
+  "target_file_path": "test_data/experimentos_120/kyc_onboarding/scanned_blurry_pdf/no_conforme/kyc_onboarding_scanned_blurry_pdf_no_conforme_008.pdf",
+  "target_ground_truth_path": "test_data/experimentos_120/kyc_onboarding/scanned_blurry_pdf/no_conforme/kyc_onboarding_scanned_blurry_pdf_no_conforme_008_ground_truth.json",
+  "rule_break_plan": [
+    "Documento caducado o numero no legible",
+    "Marcar coincidencia positiva en sanciones",
+    "Asignar PEP con nivel de riesgo bajo o sin titular real"
+  ],
+  "generation_notes": [
+    "Imprimir o rasterizar el documento y volver a escanearlo.",
+    "Aplicar desenfoque, compresion JPEG, ruido o bajo contraste.",
+    "Mantener correspondencia con el ground truth si el documento sigue siendo conforme."
+  ],
+  "instructions": [
+    "Crear o capturar el documento en el formato indicado.",
+    "Guardar el fichero final exactamente en target_file_path.",
+    "Si el caso es no conforme, ajustar tambien el ground truth final.",
+    "Cuando el caso quede listo, actualizar el manifiesto y marcar acquisition_status como ready."
+  ]
+}

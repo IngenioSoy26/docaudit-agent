@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0009",
+  "nombre_cliente": "Eloísa del Falcó",
+  "dni_cliente": "99321057D",
+  "monto_prestamo_eur": 285441.27,
+  "tasa_interes": 3.77,
+  "tae": 29.5,
+  "plazo_meses": 0,
+  "cuota_mensual_eur": 1522.8,
+  "ingresos_mensuales_eur": 2820,
+  "gastos_mensuales_eur": 1565,
+  "ratio_endeudamiento": 0.58,
+  "comision_apertura_eur": 3139.85,
+  "fein_entregada": false,
+  "fiae_entregada": false,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2022-10-21"
+}

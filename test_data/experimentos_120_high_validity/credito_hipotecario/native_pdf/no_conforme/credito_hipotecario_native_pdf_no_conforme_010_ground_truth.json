@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0010",
+  "nombre_cliente": "Áurea Yuste Exposito",
+  "dni_cliente": "70418498L",
+  "monto_prestamo_eur": 300635.27,
+  "tasa_interes": 5.4,
+  "tae": 29.5,
+  "plazo_meses": 0,
+  "cuota_mensual_eur": 1566.0,
+  "ingresos_mensuales_eur": 2900,
+  "gastos_mensuales_eur": 1630,
+  "ratio_endeudamiento": 0.58,
+  "comision_apertura_eur": 3306.99,
+  "fein_entregada": false,
+  "fiae_entregada": false,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2024-09-02"
+}

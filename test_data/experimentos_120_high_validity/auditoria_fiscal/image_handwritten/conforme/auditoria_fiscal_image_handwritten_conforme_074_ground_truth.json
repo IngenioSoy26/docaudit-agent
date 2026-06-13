@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Doménech y asociados S.L.",
+  "direccion_emisor": "Calle Control Interno 44, Madrid",
+  "nif_emisor": "F4656783A",
+  "nombre_destinatario": "Cliente Auditoria 04 S.L.",
+  "nif_destinatario": "B7000004E",
+  "num_factura": "FAC-2026-0004",
+  "serie_factura": "SER-A",
+  "fecha_expedicion": "2025-12-25",
+  "fecha_operacion": "2025-12-23",
+  "descripcion_operacion": "Servicios profesionales de auditoria documental lote 04",
+  "base_imponible": 3976.06,
+  "tipo_iva": 4,
+  "cuota_iva": 159.04,
+  "retencion_irpf": 278.32,
+  "importe_total": 3856.78
+}

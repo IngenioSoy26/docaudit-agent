@@ -11,15 +11,23 @@ Permite:
 
 import json
 import hashlib
+import importlib
+import io
 import sys
 import time
-import psutil
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import streamlit as st
 import yaml
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOGS_FOLDER = PROJECT_ROOT / "test_data" / "execution_logs"
@@ -69,17 +77,65 @@ def save_execution_log(
 
 from core.schema_models import DocSchema  # noqa: E402
 import core.schema_loader as schema_loader  # noqa: E402
-from ui.components import render_confidence_gauge, render_ground_truth_evaluation  # noqa: E402
+from ui.components import (  # noqa: E402
+    compare_extracted_to_ground_truth,
+    load_ground_truth,
+    render_confidence_gauge,
+    render_ground_truth_evaluation,
+)
 
 try:  # noqa: E402
-    from core.document_loader import extract_text_from_pdf_bytes, extract_text_from_scanned_pdf_bytes
-except ImportError:  # noqa: E402
-    from core.document_loader import extract_text_from_pdf_bytes
+    import core.document_loader as document_loader
+except Exception as exc:  # noqa: E402
+    document_loader = None
+    _document_loader_import_error: Exception | None = exc
+else:
+    _document_loader_import_error = None
 
-    extract_text_from_scanned_pdf_bytes = None
+
+def _resolve_document_loader_attr(attr_name: str) -> Any:
+    global document_loader, _document_loader_import_error
+
+    if document_loader is None:
+        try:
+            document_loader = importlib.import_module("core.document_loader")
+            _document_loader_import_error = None
+        except Exception as exc:
+            _document_loader_import_error = exc
+            return None
+
+    attr = getattr(document_loader, attr_name, None)
+    if attr is not None:
+        return attr
+
+    try:
+        document_loader = importlib.reload(document_loader)
+        _document_loader_import_error = None
+    except Exception as exc:
+        _document_loader_import_error = exc
+        return None
+
+    return getattr(document_loader, attr_name, None)
+
+
+def _document_loader_error_message(base_message: str) -> str:
+    if _document_loader_import_error is None:
+        return (
+            f"{base_message} Detén y vuelve a iniciar Streamlit para recargar los módulos, "
+            "y verifica que tu entorno tenga el código actualizado."
+        )
+    return (
+        f"{base_message} Causa detectada: "
+        f"{_document_loader_import_error.__class__.__name__}: {_document_loader_import_error}"
+    )
+
+extract_text_from_pdf_bytes = _resolve_document_loader_attr("extract_text_from_pdf_bytes")  # noqa: E402
+extract_text_from_scanned_pdf_bytes = _resolve_document_loader_attr("extract_text_from_scanned_pdf_bytes")  # noqa: E402
+extract_text_from_image_bytes = _resolve_document_loader_attr("extract_text_from_image_bytes")  # noqa: E402
 from core.orchestrator import run_expediente, run_pipeline  # noqa: E402
 from core.schema_loader import load_schema  # noqa: E402
 from core.normalizer import normalize_extracted  # noqa: E402
+
 
 
 st.set_page_config(page_title="DocAudit Agent", layout="wide")
@@ -91,6 +147,63 @@ st.markdown(
 [data-testid="stHeader"] { background: #0b1220; }
 .block-container { padding-top: 1.5rem; }
 div[data-testid="stMetric"] { background: #0f172a; border: 1px solid #334155; padding: 0.75rem; border-radius: 0.75rem; }
+.da-panel {
+    background: linear-gradient(180deg, rgba(15,23,42,0.96), rgba(15,23,42,0.88));
+    border: 1px solid rgba(148,163,184,0.18);
+    border-radius: 18px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+}
+.da-hero {
+    background: linear-gradient(135deg, rgba(37,99,235,0.18), rgba(14,165,233,0.08));
+    border: 1px solid rgba(96,165,250,0.30);
+    border-radius: 20px;
+    padding: 1.2rem 1.25rem;
+    margin-bottom: 1rem;
+}
+.da-kpi {
+    background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(30,41,59,0.92));
+    border: 1px solid rgba(96,165,250,0.20);
+    border-radius: 18px;
+    padding: 0.95rem 1rem;
+    min-height: 120px;
+}
+.da-kpi-label {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    margin-bottom: 0.35rem;
+}
+.da-kpi-value {
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: #f8fafc;
+    line-height: 1.1;
+}
+.da-kpi-note {
+    font-size: 0.82rem;
+    color: #cbd5e1;
+    margin-top: 0.45rem;
+}
+.da-badge {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    margin: 0 0.35rem 0.35rem 0;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    background: rgba(59,130,246,0.12);
+    border: 1px solid rgba(96,165,250,0.22);
+    color: #dbeafe;
+}
+.da-section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #f8fafc;
+    margin-bottom: 0.25rem;
+}
+.da-section-copy {
+    color: #cbd5e1;
+    font-size: 0.9rem;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -100,6 +213,12 @@ st.title("DocAudit Agent")
 st.caption(
     "Plataforma multi-agente para extracción, normalización, validación y auditoría documental. "
     "Diseñada para generar datos estructurados y trazables que apoyen el análisis y la toma de decisiones."
+)
+app_section = st.radio(
+    "Sección",
+    options=["Operación documental", "Centro analítico"],
+    horizontal=True,
+    key="app_section_selector",
 )
 
 
@@ -145,22 +264,1105 @@ def _render_score_gauge(*, score: float, key: str) -> None:
         render_confidence_gauge(score=score)
 
 
-def _load_pdfs_from_folder(folder: str) -> list[dict[str, Any]]:
-    p = Path(folder or "").expanduser()
-    if not p.exists() or not p.is_dir():
-        return []
-    files = sorted([x for x in p.glob("*.pdf") if x.is_file()])
+def _document_status_info(*, doc_result: dict[str, Any]) -> tuple[str, str]:
+    validation = doc_result.get("validation") if isinstance(doc_result.get("validation"), dict) else {}
+    report = doc_result.get("report") if isinstance(doc_result.get("report"), dict) else {}
+    report_json = report.get("json") if isinstance(report.get("json"), dict) else {}
+    decision_rules = report_json.get("decision_rules") if isinstance(report_json.get("decision_rules"), list) else []
+    issues = validation.get("issues") if isinstance(validation.get("issues"), list) else []
+
+    has_critical_rule_failure = any(
+        isinstance(rule, dict) and rule.get("cumple") is False and str(rule.get("severidad") or "").lower() == "critica"
+        for rule in decision_rules
+    )
+    if has_critical_rule_failure:
+        return "CRITICO", "Fallo de regla critica"
+    if issues:
+        return "REVISAR", f"{len(issues)} incidencia(s)"
+    if validation.get("valid") is True:
+        return "OK", "Validacion correcta"
+    return "REVISAR", "Pendiente de revision"
+
+
+def _rows_to_csv_bytes(*, rows: list[dict[str, Any]]) -> bytes:
+    if not rows:
+        return b""
+    headers: list[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in headers:
+                headers.append(key)
+    buffer = io.StringIO()
+    buffer.write(",".join(headers) + "\n")
+    for row in rows:
+        values: list[str] = []
+        for key in headers:
+            value = row.get(key, "")
+            text = "" if value is None else str(value)
+            text = text.replace('"', '""')
+            if any(ch in text for ch in [",", "\n", '"']):
+                text = f'"{text}"'
+            values.append(text)
+        buffer.write(",".join(values) + "\n")
+    return buffer.getvalue().encode("utf-8")
+
+
+def _doc_meta_name(*, meta: list[dict[str, Any]] | None, idx: int, fallback: str) -> str:
+    if isinstance(meta, list) and idx < len(meta) and isinstance(meta[idx], dict):
+        return str(meta[idx].get("documento") or fallback)
+    return fallback
+
+
+def _collect_issue_rows(*, docs: list[dict[str, Any]], meta: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for idx, doc in enumerate(docs):
+        if not isinstance(doc, dict):
+            continue
+        raw_index = doc.get("doc_index")
+        doc_number = (raw_index + 1) if isinstance(raw_index, int) else (idx + 1)
+        doc_name = _doc_meta_name(meta=meta, idx=idx, fallback=f"Documento {doc_number}")
+        validation = doc.get("validation") if isinstance(doc.get("validation"), dict) else {}
+        issues = validation.get("issues") if isinstance(validation.get("issues"), list) else []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            rows.append(
+                {
+                    "doc_index": doc_number,
+                    "documento": doc_name,
+                    "campo": issue.get("field") or issue.get("campo") or "",
+                    "tipo": issue.get("type") or issue.get("tipo") or issue.get("rule") or "",
+                    "mensaje": issue.get("message") or issue.get("mensaje") or issue.get("detail") or "",
+                    "severidad": issue.get("severity") or issue.get("severidad") or "",
+                }
+            )
+    return rows
+
+
+def _collect_autocorrection_rows(*, docs: list[dict[str, Any]], meta: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for idx, doc in enumerate(docs):
+        if not isinstance(doc, dict):
+            continue
+        raw_index = doc.get("doc_index")
+        doc_number = (raw_index + 1) if isinstance(raw_index, int) else (idx + 1)
+        doc_name = _doc_meta_name(meta=meta, idx=idx, fallback=f"Documento {doc_number}")
+        normalization = doc.get("normalization") if isinstance(doc.get("normalization"), dict) else {}
+        autocorrections = normalization.get("autocorrections") if isinstance(normalization.get("autocorrections"), list) else []
+        for change in autocorrections:
+            if not isinstance(change, dict):
+                continue
+            rows.append(
+                {
+                    "doc_index": doc_number,
+                    "documento": doc_name,
+                    "campo": change.get("field") or change.get("campo") or "",
+                    "origen": change.get("from") if change.get("from") is not None else change.get("old"),
+                    "corregido": change.get("to") if change.get("to") is not None else change.get("new"),
+                    "motivo": change.get("reason") or change.get("motivo") or change.get("method") or "",
+                }
+            )
+    return rows
+
+
+def _summarize_issue_patterns(*, issue_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    counter: Counter[str] = Counter()
+    sample_by_pattern: dict[str, dict[str, Any]] = {}
+    for row in issue_rows:
+        campo = str(row.get("campo") or "").strip()
+        tipo = str(row.get("tipo") or "").strip()
+        mensaje = str(row.get("mensaje") or "").strip()
+        pattern = " | ".join([part for part in [campo, tipo, mensaje] if part]) or "incidencia_sin_detalle"
+        counter[pattern] += 1
+        sample_by_pattern.setdefault(pattern, row)
+
+    summary_rows: list[dict[str, Any]] = []
+    for pattern, count in counter.most_common():
+        sample = sample_by_pattern.get(pattern, {})
+        summary_rows.append(
+            {
+                "patron": pattern,
+                "frecuencia": count,
+                "campo": sample.get("campo") or "",
+                "tipo": sample.get("tipo") or "",
+                "mensaje": sample.get("mensaje") or "",
+            }
+        )
+    return summary_rows
+
+
+def _safe_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).strip())
+    except Exception:
+        return None
+
+
+def _infer_variant_name(*, file_name: str | None, file_type: str | None) -> str:
+    base_name = str(file_name or "").lower()
+    if "scanned_blurry_pdf" in base_name:
+        return "scanned_blurry_pdf"
+    if "image_handwritten" in base_name:
+        return "image_handwritten"
+    if "image_photo" in base_name:
+        return "image_photo"
+    if "native_pdf" in base_name:
+        return "native_pdf"
+    if str(file_type or "").lower() == "scanned_pdf":
+        return "scanned_pdf"
+    if str(file_type or "").lower() == "native_pdf":
+        return "native_pdf"
+    if str(file_type or "").lower() == "image":
+        return "image"
+    return "desconocido"
+
+
+def _load_execution_log_rows(*, max_logs: int = 300) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    log_files = sorted(LOGS_FOLDER.glob("log_*.json"), reverse=True)[:max_logs]
+    for log_file in log_files:
+        try:
+            payload = json.loads(log_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        full_result = payload.get("full_result") if isinstance(payload.get("full_result"), dict) else {}
+        validation = full_result.get("validation") if isinstance(full_result.get("validation"), dict) else {}
+        report = full_result.get("report") if isinstance(full_result.get("report"), dict) else {}
+        report_json = report.get("json") if isinstance(report.get("json"), dict) else {}
+        schema = full_result.get("schema") if isinstance(full_result.get("schema"), dict) else {}
+        extracted_fields = payload.get("extracted_fields") if isinstance(payload.get("extracted_fields"), dict) else {}
+        processing_time = _safe_float(payload.get("processing_time_seconds"))
+        ram_used = _safe_float(payload.get("ram_used_mb"))
+        rows.append(
+            {
+                "timestamp": payload.get("timestamp"),
+                "file_name": payload.get("file_name"),
+                "file_type": payload.get("file_type"),
+                "variant": _infer_variant_name(file_name=payload.get("file_name"), file_type=payload.get("file_type")),
+                "method": payload.get("method"),
+                "schema_name": schema.get("name"),
+                "document_type": full_result.get("document_type"),
+                "processing_time_seconds": processing_time,
+                "ram_used_mb": ram_used if isinstance(ram_used, float) and ram_used >= 0 else None,
+                "valid": validation.get("valid"),
+                "issues_count": len(validation.get("issues") or []) if isinstance(validation.get("issues"), list) else 0,
+                "score_confianza": _safe_float(report_json.get("score_confianza")),
+                "extracted_fields_count": len([v for v in extracted_fields.values() if v not in (None, "", [])]),
+            }
+        )
+    return rows
+
+
+def _group_log_rows(*, rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        group_name = str(row.get(key) or "desconocido")
+        stats = grouped.setdefault(
+            group_name,
+            {
+                key: group_name,
+                "documentos": 0,
+                "validos": 0,
+                "latencias": [],
+                "rams": [],
+                "scores": [],
+                "campos": [],
+            },
+        )
+        stats["documentos"] += 1
+        if row.get("valid") is True:
+            stats["validos"] += 1
+        if isinstance(row.get("processing_time_seconds"), (int, float)):
+            stats["latencias"].append(float(row["processing_time_seconds"]))
+        if isinstance(row.get("ram_used_mb"), (int, float)):
+            stats["rams"].append(float(row["ram_used_mb"]))
+        if isinstance(row.get("score_confianza"), (int, float)):
+            stats["scores"].append(float(row["score_confianza"]))
+        if isinstance(row.get("extracted_fields_count"), (int, float)):
+            stats["campos"].append(float(row["extracted_fields_count"]))
+
+    summary_rows: list[dict[str, Any]] = []
+    for _, stats in sorted(grouped.items(), key=lambda item: str(item[0]).lower()):
+        documentos = stats["documentos"]
+        summary_rows.append(
+            {
+                key: stats[key],
+                "documentos": documentos,
+                "validos": stats["validos"],
+                "tasa_validez": round((stats["validos"] / documentos), 4) if documentos else 0.0,
+                "latencia_media_s": round(sum(stats["latencias"]) / len(stats["latencias"]), 4) if stats["latencias"] else None,
+                "ram_media_mb": round(sum(stats["rams"]) / len(stats["rams"]), 2) if stats["rams"] else None,
+                "score_medio": round(sum(stats["scores"]) / len(stats["scores"]), 4) if stats["scores"] else None,
+                "campos_extraidos_medios": round(sum(stats["campos"]) / len(stats["campos"]), 2) if stats["campos"] else None,
+            }
+        )
+    return summary_rows
+
+
+def _collect_log_issue_rows(*, max_logs: int = 300) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    log_files = sorted(LOGS_FOLDER.glob("log_*.json"), reverse=True)[:max_logs]
+    for log_file in log_files:
+        try:
+            payload = json.loads(log_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        full_result = payload.get("full_result") if isinstance(payload.get("full_result"), dict) else {}
+        validation = full_result.get("validation") if isinstance(full_result.get("validation"), dict) else {}
+        issues = validation.get("issues") if isinstance(validation.get("issues"), list) else []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            rows.append(
+                {
+                    "file_name": payload.get("file_name"),
+                    "schema_name": (full_result.get("schema") or {}).get("name") if isinstance(full_result.get("schema"), dict) else None,
+                    "file_type": payload.get("file_type"),
+                    "variant": _infer_variant_name(file_name=payload.get("file_name"), file_type=payload.get("file_type")),
+                    "method": payload.get("method"),
+                    "campo": issue.get("field") or issue.get("campo") or "",
+                    "tipo": issue.get("code") or issue.get("type") or issue.get("tipo") or "",
+                    "mensaje": issue.get("message") or issue.get("mensaje") or "",
+                    "severidad": issue.get("level") or issue.get("severidad") or "",
+                }
+            )
+    return rows
+
+
+def _resolve_ground_truth_for_filename(file_name: str | None) -> Path | None:
+    if not isinstance(file_name, str) or not file_name.strip():
+        return None
+    base_name = Path(file_name).name
+    stem = Path(base_name).stem
+
+    sample_docs_root = PROJECT_ROOT / "data" / "sample_docs"
+    experiment_roots = [
+        PROJECT_ROOT / "test_data" / "experimentos_120_high_validity",
+        PROJECT_ROOT / "test_data" / "experimentos_120",
+    ]
+
+    if stem.startswith("contrato_hipoteca_esp_"):
+        suffix = stem.rsplit("_", 1)[-1]
+        candidate = sample_docs_root / "caso_uso_1_auditoria_hipotecaria" / f"ground_truth_esp_{suffix}.json"
+        if candidate.exists():
+            return candidate
+
+    for candidate_name in [f"{stem}.json", f"{stem}_ground_truth.json"]:
+        hits = list(sample_docs_root.rglob(candidate_name))
+        if hits:
+            return hits[0]
+        for experiment_root in experiment_roots:
+            hits = list(experiment_root.rglob(candidate_name))
+            if hits:
+                return hits[0]
+    return None
+
+
+def _load_log_evaluation_rows(*, max_logs: int = 300) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    summary_rows: list[dict[str, Any]] = []
+    field_rows: list[dict[str, Any]] = []
+    log_files = sorted(LOGS_FOLDER.glob("log_*.json"), reverse=True)[:max_logs]
+    for log_file in log_files:
+        try:
+            payload = json.loads(log_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        gt_path = _resolve_ground_truth_for_filename(payload.get("file_name"))
+        if gt_path is None or not gt_path.exists():
+            continue
+
+        full_result = payload.get("full_result") if isinstance(payload.get("full_result"), dict) else {}
+        schema = full_result.get("schema") if isinstance(full_result.get("schema"), dict) else {}
+        normalized = (full_result.get("normalization") or {}).get("normalized") if isinstance(full_result.get("normalization"), dict) else None
+        extracted = normalized if isinstance(normalized, dict) else payload.get("extracted_fields")
+        if not isinstance(extracted, dict):
+            continue
+
+        try:
+            ground_truth = load_ground_truth(gt_path)
+            cmp = compare_extracted_to_ground_truth(extracted=extracted, ground_truth=ground_truth)
+        except Exception:
+            continue
+
+        summary = cmp.get("summary") if isinstance(cmp.get("summary"), dict) else {}
+        total_fields = int(summary.get("total") or 0)
+        matched_fields = int(summary.get("matched") or 0)
+        exact_match = total_fields > 0 and matched_fields == total_fields
+        row = {
+            "file_name": payload.get("file_name"),
+            "schema_name": schema.get("name"),
+            "file_type": payload.get("file_type"),
+            "variant": _infer_variant_name(file_name=payload.get("file_name"), file_type=payload.get("file_type")),
+            "method": payload.get("method"),
+            "ground_truth_path": str(gt_path),
+            "fields_total": total_fields,
+            "fields_matched": matched_fields,
+            "match_rate": _safe_float(summary.get("match_rate")),
+            "precision": _safe_float(summary.get("precision")),
+            "recall": _safe_float(summary.get("recall")),
+            "f1": _safe_float(summary.get("f1")),
+            "exact_match": exact_match,
+        }
+        summary_rows.append(row)
+
+        for field_row in cmp.get("rows") or []:
+            if not isinstance(field_row, dict):
+                continue
+            field_rows.append(
+                {
+                    "file_name": payload.get("file_name"),
+                    "schema_name": schema.get("name"),
+                    "file_type": payload.get("file_type"),
+                    "variant": _infer_variant_name(file_name=payload.get("file_name"), file_type=payload.get("file_type")),
+                    "method": payload.get("method"),
+                    "campo": field_row.get("campo"),
+                    "match": field_row.get("match"),
+                    "esperado": field_row.get("esperado"),
+                    "extraido": field_row.get("extraido"),
+                }
+            )
+
+    return summary_rows, field_rows
+
+
+def _group_evaluation_rows(*, rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        group_name = str(row.get(key) or "desconocido")
+        stats = grouped.setdefault(
+            group_name,
+            {
+                key: group_name,
+                "documentos": 0,
+                "exact_matches": 0,
+                "fields_total": 0,
+                "fields_matched": 0,
+                "f1_values": [],
+                "match_rate_values": [],
+            },
+        )
+        stats["documentos"] += 1
+        if row.get("exact_match") is True:
+            stats["exact_matches"] += 1
+        stats["fields_total"] += int(row.get("fields_total") or 0)
+        stats["fields_matched"] += int(row.get("fields_matched") or 0)
+        if isinstance(row.get("f1"), (int, float)):
+            stats["f1_values"].append(float(row["f1"]))
+        if isinstance(row.get("match_rate"), (int, float)):
+            stats["match_rate_values"].append(float(row["match_rate"]))
+
+    out: list[dict[str, Any]] = []
+    for _, stats in sorted(grouped.items(), key=lambda item: str(item[0]).lower()):
+        documentos = stats["documentos"]
+        out.append(
+            {
+                key: stats[key],
+                "documentos_evaluados": documentos,
+                "exact_matches": stats["exact_matches"],
+                "exact_match_rate": round(stats["exact_matches"] / documentos, 4) if documentos else 0.0,
+                "field_level_f1_medio": round(sum(stats["f1_values"]) / len(stats["f1_values"]), 4) if stats["f1_values"] else None,
+                "match_rate_medio": round(sum(stats["match_rate_values"]) / len(stats["match_rate_values"]), 4) if stats["match_rate_values"] else None,
+                "campos_evaluados": stats["fields_total"],
+                "campos_exactos": stats["fields_matched"],
+            }
+        )
+    return out
+
+
+def _summarize_field_errors(*, field_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    counter: Counter[str] = Counter()
+    totals: Counter[str] = Counter()
+    for row in field_rows:
+        field_name = str(row.get("campo") or "campo_desconocido")
+        totals[field_name] += 1
+        if row.get("match") is not True:
+            counter[field_name] += 1
+    out: list[dict[str, Any]] = []
+    for field_name, mismatches in counter.most_common():
+        total = totals.get(field_name, 0)
+        out.append(
+            {
+                "campo": field_name,
+                "errores": mismatches,
+                "evaluaciones": total,
+                "tasa_error": round(mismatches / total, 4) if total else 0.0,
+            }
+        )
+    return out
+
+
+SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+SUPPORTED_UPLOAD_TYPES = ["pdf", "png", "jpg", "jpeg", "webp"]
+
+
+def _infer_input_kind(file_name: str) -> str:
+    suffix = Path(file_name).suffix.lower()
+    if suffix == ".pdf":
+        return "pdf"
+    if suffix in SUPPORTED_IMAGE_SUFFIXES:
+        return "image"
+    return "unknown"
+
+
+def _sanitize_folder_path(folder: str) -> Path:
+    raw = (folder or "").strip().strip('"').strip("'")
+    return Path(raw).expanduser()
+
+
+def _load_documents_from_folder(folder: str) -> tuple[list[dict[str, Any]], str | None]:
+    p = _sanitize_folder_path(folder)
+    if not str(p).strip():
+        return [], "Debes indicar una ruta de carpeta."
+    if not p.exists():
+        return [], f"La carpeta no existe: {p}"
+    if not p.is_dir():
+        return [], f"La ruta indicada no es una carpeta: {p}"
+
+    files = sorted(
+        [
+            x
+            for x in p.rglob("*")
+            if x.is_file() and x.suffix.lower() in {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+        ],
+        key=lambda item: str(item).lower(),
+    )
+    if not files:
+        return [], "No se encontraron PDFs o imágenes compatibles en la carpeta."
+
     out: list[dict[str, Any]] = []
     for f in files:
-        out.append({"name": f.name, "bytes": f.read_bytes(), "source": "carpeta", "path": str(f)})
-    return out
+        try:
+            display_name = str(f.relative_to(p))
+        except ValueError:
+            display_name = f.name
+        out.append(
+            {
+                "name": display_name,
+                "bytes": f.read_bytes(),
+                "source": "carpeta",
+                "path": str(f),
+                "input_kind": _infer_input_kind(f.name),
+            }
+        )
+    return out, None
 
 
-def _load_pdfs_from_uploads(uploaded: list[Any]) -> list[dict[str, Any]]:
+def _build_doc_option_labels(*, docs: list[dict[str, Any]], meta: list[dict[str, Any]] | None) -> list[str]:
+    labels: list[str] = []
+    for idx, d in enumerate(docs):
+        if not isinstance(d, dict):
+            continue
+        raw_index = d.get("doc_index")
+        doc_number = (raw_index + 1) if isinstance(raw_index, int) else (idx + 1)
+        file_name = None
+        if isinstance(meta, list) and idx < len(meta) and isinstance(meta[idx], dict):
+            file_name = meta[idx].get("documento")
+        labels.append(f"Documento {doc_number} - {file_name or 'sin nombre'}")
+    return labels
+
+
+def _render_document_result_detail(*, chosen: dict[str, Any], selection_key: str) -> None:
+    sub_tabs = st.tabs(["Extracción", "Normalización", "Validación", "Auditoría", "JSON"])
+    with sub_tabs[0]:
+        st.dataframe(
+            _to_table_rows(extracted=chosen.get("extracted") or {}, schema=None),
+            use_container_width=True,
+            hide_index=True,
+        )
+        _render_json(label="Ver extracted_raw", payload=chosen.get("extracted_raw"))
+    with sub_tabs[1]:
+        norm = chosen.get("normalization") if isinstance(chosen.get("normalization"), dict) else {}
+        changes = norm.get("changes") if isinstance(norm.get("changes"), list) else []
+        autocorrections = norm.get("autocorrections") if isinstance(norm.get("autocorrections"), list) else []
+        if changes:
+            st.dataframe(changes, use_container_width=True, hide_index=True)
+        else:
+            st.info("Sin cambios de normalización.")
+        if autocorrections:
+            st.write("Autocorrecciones")
+            st.dataframe(autocorrections, use_container_width=True, hide_index=True)
+        _render_json(label="Ver normalizado (JSON)", payload=norm.get("normalized"))
+    with sub_tabs[2]:
+        val = chosen.get("validation") if isinstance(chosen.get("validation"), dict) else {}
+        issues = val.get("issues") if isinstance(val.get("issues"), list) else []
+        _render_issues_table(issues=issues)
+        _render_json(label="Ver validación (JSON)", payload=val)
+    with sub_tabs[3]:
+        rep = chosen.get("report") if isinstance(chosen.get("report"), dict) else {}
+        rep_json = rep.get("json") if isinstance(rep.get("json"), dict) else {}
+        rep_md = rep.get("markdown") if isinstance(rep.get("markdown"), str) else ""
+        score = rep_json.get("score_confianza")
+        if isinstance(score, (int, float)):
+            _render_score_gauge(score=float(score), key=f"score_confianza_{selection_key}")
+        if rep_md:
+            st.markdown(rep_md)
+        _render_json(label="Ver informe (JSON)", payload=rep_json)
+    with sub_tabs[4]:
+        st.json(chosen)
+
+
+def _render_loaded_documents_preview(*, pdf_items: list[dict[str, Any]]) -> None:
+    if not pdf_items:
+        return []
+    with st.expander("Ver documentos cargados antes del análisis", expanded=False):
+        options = [str(item.get("name") or f"documento_{i+1}") for i, item in enumerate(pdf_items)]
+        selected = st.selectbox("Documento cargado", options=options, key="preview_loaded_document")
+        selected_idx = options.index(selected) if selected in options else 0
+        item = pdf_items[selected_idx] if selected_idx < len(pdf_items) else {}
+        st.write(f"Origen: {item.get('source') or '-'}")
+        if item.get("path"):
+            st.caption(str(item.get("path")))
+        file_bytes = item.get("bytes") or b""
+        input_kind = str(item.get("input_kind") or "")
+        if input_kind == "image":
+            st.image(file_bytes, caption=str(item.get("name") or "imagen"), use_container_width=True)
+        else:
+            preview_text = st.session_state.get("expediente_texts")
+            if isinstance(preview_text, list) and selected_idx < len(preview_text):
+                st.text_area(
+                    "Texto extraído preliminar",
+                    value=str(preview_text[selected_idx] or ""),
+                    height=260,
+                    key=f"preview_text_{selected_idx}",
+                )
+            else:
+                st.info("El texto extraído se mostrará aquí una vez procesado el documento.")
+
+
+def _load_documents_from_uploads(uploaded: list[Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for up in uploaded:
-        out.append({"name": up.name, "bytes": up.read(), "source": "subida", "path": None})
+        out.append(
+            {
+                "name": up.name,
+                "bytes": up.read(),
+                "source": "subida",
+                "path": None,
+                "input_kind": _infer_input_kind(up.name),
+            }
+        )
     return out
+
+
+def _avg(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 4) if values else None
+
+
+def _max_value(values: list[float]) -> float | None:
+    return round(max(values), 4) if values else None
+
+
+def _format_seconds(value: float | None) -> str:
+    return f"{value:.2f} s" if isinstance(value, (int, float)) else "-"
+
+
+def _format_mb(value: float | None) -> str:
+    return f"{value:.2f} MB" if isinstance(value, (int, float)) else "-"
+
+
+def _format_percent(value: float | None) -> str:
+    return f"{value:.0%}" if isinstance(value, (int, float)) else "-"
+
+
+def _format_number(value: float | None, decimals: int = 1) -> str:
+    if not isinstance(value, (int, float)):
+        return "-"
+    return f"{float(value):.{decimals}f}"
+
+
+def _render_kpi_card(*, title: str, value: str, note: str) -> None:
+    st.markdown(
+        (
+            '<div class="da-kpi">'
+            f'<div class="da-kpi-label">{title}</div>'
+            f'<div class="da-kpi-value">{value}</div>'
+            f'<div class="da-kpi-note">{note}</div>'
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def _to_dataframe(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def _render_dataframe_or_message(*, rows: list[dict[str, Any]], empty_message: str) -> None:
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info(empty_message)
+
+
+def _render_chart_from_rows(
+    *,
+    rows: list[dict[str, Any]],
+    index_key: str,
+    value_keys: list[str],
+    empty_message: str,
+) -> None:
+    if not rows:
+        st.info(empty_message)
+        return
+    chart_df = _to_dataframe(rows)
+    available_columns = [col for col in value_keys if col in chart_df.columns]
+    if not available_columns or index_key not in chart_df.columns:
+        st.info(empty_message)
+        return
+    chart_df = chart_df[[index_key, *available_columns]].set_index(index_key)
+    st.bar_chart(chart_df, use_container_width=True)
+
+
+def _render_analytics_dashboard() -> None:
+    st.header("Centro Analítico")
+    st.caption(
+        "Espacio dedicado al análisis del comportamiento del sistema, la calidad del dato, "
+        "la comparación experimental entre variantes documentales y la exportación de métricas para tesis."
+    )
+
+    log_rows = _load_execution_log_rows()
+    log_issue_rows = _collect_log_issue_rows()
+    eval_rows, eval_field_rows = _load_log_evaluation_rows()
+
+    all_schema_options = sorted(
+        {
+            str(row.get("schema_name"))
+            for row in [*log_rows, *eval_rows]
+            if row.get("schema_name")
+        }
+    )
+    all_variant_options = sorted(
+        {
+            str(row.get("variant"))
+            for row in [*log_rows, *eval_rows]
+            if row.get("variant")
+        }
+    )
+    all_method_options = sorted(
+        {
+            str(row.get("method"))
+            for row in [*log_rows, *eval_rows]
+            if row.get("method")
+        }
+    )
+
+    st.markdown(
+        """
+<div class="da-hero">
+  <div class="da-section-title">Panel separado para comportamiento, métricas y tratamiento del dato</div>
+  <div class="da-section-copy">
+    Esta vista concentra el análisis histórico del sistema, la calidad de extracción y la comparación experimental
+    entre variantes documentales. La operación diaria queda fuera de esta sección para mantener la app clara.
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    filter_panel_left, filter_panel_right = st.columns([2.2, 1.2])
+    with filter_panel_left:
+        st.markdown('<div class="da-panel">', unsafe_allow_html=True)
+        st.markdown("**Filtros de análisis**")
+        f1, f2, f3 = st.columns(3)
+        selected_schemas = f1.multiselect(
+            "Caso de uso",
+            options=all_schema_options,
+            default=all_schema_options,
+            key="analytics_schema_filter",
+        )
+        selected_variants = f2.multiselect(
+            "Variante documental",
+            options=all_variant_options,
+            default=all_variant_options,
+            key="analytics_variant_filter",
+        )
+        selected_methods = f3.multiselect(
+            "Método de extracción",
+            options=all_method_options,
+            default=all_method_options,
+            key="analytics_method_filter",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+    with filter_panel_right:
+        st.markdown('<div class="da-panel">', unsafe_allow_html=True)
+        st.markdown("**Uso sugerido**")
+        st.caption(
+            "1. Filtra por caso o variante.\n"
+            "2. Revisa los KPIs principales.\n"
+            "3. Baja a los gráficos y exporta CSV para tesis."
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    filtered_log_rows = [
+        row
+        for row in log_rows
+        if (not selected_schemas or row.get("schema_name") in selected_schemas)
+        and (not selected_variants or row.get("variant") in selected_variants)
+        and (not selected_methods or row.get("method") in selected_methods)
+    ]
+    filtered_eval_rows = [
+        row
+        for row in eval_rows
+        if (not selected_schemas or row.get("schema_name") in selected_schemas)
+        and (not selected_variants or row.get("variant") in selected_variants)
+        and (not selected_methods or row.get("method") in selected_methods)
+    ]
+    filtered_log_issue_rows = [
+        row
+        for row in log_issue_rows
+        if (not selected_schemas or row.get("schema_name") in selected_schemas)
+        and (not selected_variants or row.get("variant") in selected_variants)
+        and (not selected_methods or row.get("method") in selected_methods)
+    ]
+    filtered_eval_field_rows = [
+        row
+        for row in eval_field_rows
+        if (not selected_schemas or row.get("schema_name") in selected_schemas)
+        and (not selected_variants or row.get("variant") in selected_variants)
+        and (not selected_methods or row.get("method") in selected_methods)
+    ]
+
+    if not filtered_log_rows:
+        st.info("No hay datos históricos que coincidan con los filtros seleccionados.")
+        return
+
+    active_filter_values = [
+        *(selected_schemas or ["Todos los casos"]),
+        *(selected_variants or ["Todas las variantes"]),
+        *(selected_methods or ["Todos los métodos"]),
+    ]
+    badges = "".join(f'<span class="da-badge">{value}</span>' for value in active_filter_values[:12])
+    if badges:
+        st.markdown(badges, unsafe_allow_html=True)
+
+    log_issue_summary_rows = _summarize_issue_patterns(issue_rows=filtered_log_issue_rows)
+    by_method_rows = _group_log_rows(rows=filtered_log_rows, key="method")
+    by_file_type_rows = _group_log_rows(rows=filtered_log_rows, key="file_type")
+    by_schema_rows = _group_log_rows(rows=filtered_log_rows, key="schema_name")
+    by_variant_rows = _group_log_rows(rows=filtered_log_rows, key="variant")
+    eval_by_method_rows = _group_evaluation_rows(rows=filtered_eval_rows, key="method")
+    eval_by_file_type_rows = _group_evaluation_rows(rows=filtered_eval_rows, key="file_type")
+    eval_by_schema_rows = _group_evaluation_rows(rows=filtered_eval_rows, key="schema_name")
+    eval_by_variant_rows = _group_evaluation_rows(rows=filtered_eval_rows, key="variant")
+    field_error_rows = _summarize_field_errors(field_rows=filtered_eval_field_rows)
+
+    valid_count = len([row for row in filtered_log_rows if row.get("valid") is True])
+    latency_values = [float(row["processing_time_seconds"]) for row in filtered_log_rows if isinstance(row.get("processing_time_seconds"), (int, float))]
+    ram_values = [float(row["ram_used_mb"]) for row in filtered_log_rows if isinstance(row.get("ram_used_mb"), (int, float))]
+    score_values = [float(row["score_confianza"]) for row in filtered_log_rows if isinstance(row.get("score_confianza"), (int, float))]
+    extracted_values = [float(row["extracted_fields_count"]) for row in filtered_log_rows if isinstance(row.get("extracted_fields_count"), (int, float))]
+    logs_count = len(filtered_log_rows)
+    valid_rate = (valid_count / logs_count) if logs_count else None
+    avg_latency = _avg(latency_values)
+    peak_ram = _max_value(ram_values)
+    avg_score = _avg(score_values)
+    avg_extracted = _avg(extracted_values)
+
+    exact_matches = len([row for row in filtered_eval_rows if row.get("exact_match") is True])
+    f1_values = [float(row["f1"]) for row in filtered_eval_rows if isinstance(row.get("f1"), (int, float))]
+    match_rate_values = [float(row["match_rate"]) for row in filtered_eval_rows if isinstance(row.get("match_rate"), (int, float))]
+    fields_total = sum(int(row.get("fields_total") or 0) for row in filtered_eval_rows)
+    fields_matched = sum(int(row.get("fields_matched") or 0) for row in filtered_eval_rows)
+    exact_match_rate = (exact_matches / len(filtered_eval_rows)) if filtered_eval_rows else None
+    avg_f1 = _avg(f1_values)
+    avg_match_rate = _avg(match_rate_values)
+
+    kpi_cols = st.columns(4)
+    with kpi_cols[0]:
+        _render_kpi_card(
+            title="Logs analizados",
+            value=str(logs_count),
+            note="Ejecuciones históricas que entran en el filtro actual.",
+        )
+    with kpi_cols[1]:
+        _render_kpi_card(
+            title="Latencia media",
+            value=_format_seconds(avg_latency),
+            note=f"RAM peak: {_format_mb(peak_ram)}",
+        )
+    with kpi_cols[2]:
+        _render_kpi_card(
+            title="Tasa de validez",
+            value=_format_percent(valid_rate),
+            note=f"Score medio: {_format_percent(avg_score)}",
+        )
+    with kpi_cols[3]:
+        _render_kpi_card(
+            title="Campos extraídos",
+            value=_format_number(avg_extracted, 1),
+            note=f"Incidencias detectadas: {len(filtered_log_issue_rows)}",
+        )
+
+    st.markdown("**Evaluación formal**")
+    eval_cols = st.columns(4)
+    with eval_cols[0]:
+        _render_kpi_card(
+            title="Docs evaluados",
+            value=str(len(filtered_eval_rows)),
+            note="Comparados contra ground truth disponible.",
+        )
+    with eval_cols[1]:
+        _render_kpi_card(
+            title="Exact Match Rate",
+            value=_format_percent(exact_match_rate),
+            note=f"Exact matches: {exact_matches}",
+        )
+    with eval_cols[2]:
+        _render_kpi_card(
+            title="Field-level F1",
+            value=_format_percent(avg_f1),
+            note=f"Match rate medio: {_format_percent(avg_match_rate)}",
+        )
+    with eval_cols[3]:
+        _render_kpi_card(
+            title="Campos evaluados",
+            value=str(fields_total),
+            note=f"Coincidencias exactas: {fields_matched}",
+        )
+
+    executive_left, executive_right = st.columns([1.8, 1.1])
+    with executive_left:
+        st.markdown(
+            '<div class="da-panel"><div class="da-section-title">Lectura rápida</div>'
+            '<div class="da-section-copy">Esta parte resume si el sistema está siendo estable, preciso y consistente '
+            'para los casos y variantes filtrados.</div></div>',
+            unsafe_allow_html=True,
+        )
+    with executive_right:
+        if filtered_eval_rows and eval_by_variant_rows:
+            ordered_variant_rows = sorted(
+                eval_by_variant_rows,
+                key=lambda row: float(row.get("field_level_f1_medio") or -1),
+                reverse=True,
+            )
+            best_variant = ordered_variant_rows[0]
+            worst_variant = ordered_variant_rows[-1]
+            st.markdown(
+                '<div class="da-panel"><div class="da-section-title">Señal principal</div>'
+                f'<div class="da-section-copy">Mejor variante actual: <b>{best_variant.get("variant") or "-"}</b><br>'
+                f'Variante con más riesgo: <b>{worst_variant.get("variant") or "-"}</b></div></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="da-panel"><div class="da-section-title">Señal principal</div>'
+                '<div class="da-section-copy">Aún faltan logs con ground truth para una lectura comparativa completa.</div></div>',
+                unsafe_allow_html=True,
+            )
+
+    dl_1, dl_2, dl_3, dl_4 = st.columns(4)
+    with dl_1:
+        st.download_button(
+            "Descargar logs CSV",
+            data=_rows_to_csv_bytes(rows=filtered_log_rows),
+            file_name="docaudit_metricas_logs.csv",
+            mime="text/csv",
+            key="analytics_download_logs_csv",
+            disabled=not filtered_log_rows,
+        )
+    with dl_2:
+        st.download_button(
+            "Descargar errores CSV",
+            data=_rows_to_csv_bytes(rows=log_issue_summary_rows),
+            file_name="docaudit_errores_frecuentes.csv",
+            mime="text/csv",
+            key="analytics_download_error_csv",
+            disabled=not log_issue_summary_rows,
+        )
+    with dl_3:
+        st.download_button(
+            "Descargar evaluación CSV",
+            data=_rows_to_csv_bytes(rows=filtered_eval_rows),
+            file_name="docaudit_evaluacion_formal.csv",
+            mime="text/csv",
+            key="analytics_download_eval_csv",
+            disabled=not filtered_eval_rows,
+        )
+    with dl_4:
+        st.download_button(
+            "Descargar variantes CSV",
+            data=_rows_to_csv_bytes(rows=eval_by_variant_rows),
+            file_name="docaudit_comparacion_variantes.csv",
+            mime="text/csv",
+            key="analytics_download_variant_csv",
+            disabled=not eval_by_variant_rows,
+        )
+
+    dashboard_tabs = st.tabs(
+        [
+            "Resumen Ejecutivo",
+            "Rendimiento",
+            "Calidad del Dato",
+            "Comparación Experimental",
+            "Errores y Trazabilidad",
+        ]
+    )
+
+    with dashboard_tabs[0]:
+        executive_chart_left, executive_chart_right = st.columns(2)
+        with executive_chart_left:
+            st.markdown("**Cobertura por caso de uso**")
+            _render_chart_from_rows(
+                rows=by_schema_rows,
+                index_key="schema_name",
+                value_keys=["documentos", "validos"],
+                empty_message="No hay datos por caso de uso para mostrar.",
+            )
+        with executive_chart_right:
+            st.markdown("**Comportamiento por método**")
+            _render_chart_from_rows(
+                rows=by_method_rows,
+                index_key="method",
+                value_keys=["tasa_validez", "score_medio"],
+                empty_message="No hay datos por método para mostrar.",
+            )
+        st.markdown("**Resumen por caso de uso**")
+        _render_dataframe_or_message(rows=by_schema_rows, empty_message="No hay filas para el resumen por caso de uso.")
+        st.markdown("**Resumen por método**")
+        _render_dataframe_or_message(rows=by_method_rows, empty_message="No hay filas para el resumen por método.")
+        if filtered_eval_rows:
+            st.markdown("**Resumen formal por variante**")
+            _render_dataframe_or_message(rows=eval_by_variant_rows, empty_message="No hay filas de evaluación por variante.")
+        else:
+            st.info("Con los filtros actuales no hay suficiente ground truth asociado para evaluación formal.")
+
+    with dashboard_tabs[1]:
+        perf_chart_1, perf_chart_2 = st.columns(2)
+        with perf_chart_1:
+            st.markdown("**Latencia por variante**")
+            _render_chart_from_rows(
+                rows=by_variant_rows,
+                index_key="variant",
+                value_keys=["latencia_media_s"],
+                empty_message="No hay latencias por variante para mostrar.",
+            )
+        with perf_chart_2:
+            st.markdown("**RAM media por tipo documental**")
+            _render_chart_from_rows(
+                rows=by_file_type_rows,
+                index_key="file_type",
+                value_keys=["ram_media_mb"],
+                empty_message="No hay métricas de RAM por tipo documental.",
+            )
+        detail_perf_left, detail_perf_right = st.columns(2)
+        with detail_perf_left:
+            st.markdown("**Rendimiento por tipo documental**")
+            _render_dataframe_or_message(rows=by_file_type_rows, empty_message="No hay resumen por tipo documental.")
+        with detail_perf_right:
+            st.markdown("**Rendimiento por variante**")
+            _render_dataframe_or_message(rows=by_variant_rows, empty_message="No hay resumen por variante.")
+        st.markdown("**Logs recientes**")
+        _render_dataframe_or_message(rows=filtered_log_rows[:50], empty_message="No hay logs recientes para mostrar.")
+
+    with dashboard_tabs[2]:
+        if filtered_eval_rows:
+            quality_chart_1, quality_chart_2 = st.columns(2)
+            with quality_chart_1:
+                st.markdown("**F1 por variante**")
+                _render_chart_from_rows(
+                    rows=eval_by_variant_rows,
+                    index_key="variant",
+                    value_keys=["field_level_f1_medio", "exact_match_rate"],
+                    empty_message="No hay datos de F1 por variante.",
+                )
+            with quality_chart_2:
+                st.markdown("**F1 por caso de uso**")
+                _render_chart_from_rows(
+                    rows=eval_by_schema_rows,
+                    index_key="schema_name",
+                    value_keys=["field_level_f1_medio", "match_rate_medio"],
+                    empty_message="No hay datos de evaluación por caso de uso.",
+                )
+            st.markdown("**Evaluación formal por método**")
+            _render_dataframe_or_message(rows=eval_by_method_rows, empty_message="No hay evaluación por método.")
+            st.markdown("**Evaluación formal por tipo documental**")
+            _render_dataframe_or_message(rows=eval_by_file_type_rows, empty_message="No hay evaluación por tipo documental.")
+            st.markdown("**Evaluación formal por esquema**")
+            _render_dataframe_or_message(rows=eval_by_schema_rows, empty_message="No hay evaluación por esquema.")
+            st.markdown("**Campos con más error**")
+            if field_error_rows:
+                st.dataframe(field_error_rows, use_container_width=True, hide_index=True)
+            else:
+                st.success("No se detectaron errores de campo en la evaluación filtrada.")
+        else:
+            st.info("No hay datos de evaluación formal para los filtros actuales.")
+
+    with dashboard_tabs[3]:
+        if eval_by_variant_rows:
+            st.markdown("**Comparación entre variantes documentales**")
+            _render_chart_from_rows(
+                rows=eval_by_variant_rows,
+                index_key="variant",
+                value_keys=["field_level_f1_medio", "exact_match_rate", "match_rate_medio"],
+                empty_message="No hay suficientes datos para comparar variantes.",
+            )
+            st.dataframe(eval_by_variant_rows, use_container_width=True, hide_index=True)
+            preferred_order = ["native_pdf", "scanned_blurry_pdf", "image_photo", "image_handwritten"]
+            ordered_variant_rows = sorted(
+                eval_by_variant_rows,
+                key=lambda row: preferred_order.index(str(row.get("variant"))) if str(row.get("variant")) in preferred_order else 999,
+            )
+            if ordered_variant_rows:
+                best_variant = max(
+                    ordered_variant_rows,
+                    key=lambda row: (
+                        float(row.get("field_level_f1_medio") or -1),
+                        float(row.get("exact_match_rate") or -1),
+                    ),
+                )
+                worst_variant = min(
+                    ordered_variant_rows,
+                    key=lambda row: (
+                        float(row.get("field_level_f1_medio") or 999),
+                        float(row.get("exact_match_rate") or 999),
+                    ),
+                )
+                c_cmp_1, c_cmp_2, c_cmp_3 = st.columns(3)
+                c_cmp_1.metric("Mejor variante por F1", str(best_variant.get("variant") or "-"))
+                c_cmp_2.metric("Variante más débil por F1", str(worst_variant.get("variant") or "-"))
+                c_cmp_3.metric(
+                    "Brecha F1",
+                    _format_percent(
+                        float(best_variant.get("field_level_f1_medio") or 0) - float(worst_variant.get("field_level_f1_medio") or 0)
+                    ),
+                )
+        else:
+            st.info("Todavía no hay suficientes logs evaluados por variante.")
+
+    with dashboard_tabs[4]:
+        trace_left, trace_right = st.columns([1.4, 1.2])
+        with trace_left:
+            st.markdown("**Errores frecuentes**")
+            if log_issue_summary_rows:
+                st.dataframe(log_issue_summary_rows, use_container_width=True, hide_index=True)
+            else:
+                st.success("No hay incidencias acumuladas con los filtros seleccionados.")
+        with trace_right:
+            st.markdown("**Incidencias por patrón**")
+            top_issue_rows = log_issue_summary_rows[:8]
+            if top_issue_rows:
+                _render_chart_from_rows(
+                    rows=top_issue_rows,
+                    index_key="patron",
+                    value_keys=["frecuencia"],
+                    empty_message="No hay incidencias para representar.",
+                )
+            else:
+                st.info("No hay incidencias para representar.")
+        st.markdown("**Trazabilidad de evaluación**")
+        if log_issue_summary_rows:
+            _render_json(label="Ver incidencias resumidas (JSON)", payload=log_issue_summary_rows[:50])
+        if filtered_eval_rows:
+            _render_json(label="Ver evaluación documental detallada", payload=filtered_eval_rows[:100])
+
+if app_section == "Centro analítico":
+    _render_analytics_dashboard()
+    st.stop()
+
 
 with st.sidebar:
     st.subheader("Ejecución")
@@ -172,8 +1374,12 @@ with st.sidebar:
     )
     st.divider()
     st.subheader("Carpeta")
-    folder_path = st.text_input("Ruta de carpeta (PDFs)", value="")
-    load_folder_clicked = st.button("Cargar PDFs desde carpeta")
+    folder_path = st.text_input(
+        "Ruta de carpeta (PDFs e imagenes)",
+        value=st.session_state.get("folder_path", ""),
+        key="folder_path",
+    )
+    load_folder_clicked = st.button("Cargar documentos desde carpeta")
     st.divider()
     st.subheader("Esquemas YAML")
     st.caption("Edición avanzada. Recomendado solo si necesitas ajustar campos/reglas.")
@@ -208,13 +1414,31 @@ with st.sidebar:
                     selected_schema_path.write_text(edited_yaml, encoding="utf-8")
                     st.success(f"Guardado: {selected_schema_path.name}")
 
-uploaded_pdfs = st.file_uploader("Subir PDF(s)", type=["pdf"], accept_multiple_files=True)
+uploaded_documents = st.file_uploader(
+    "Subir documentos",
+    type=SUPPORTED_UPLOAD_TYPES,
+    accept_multiple_files=True,
+    help="Puedes subir PDF, PNG, JPG, JPEG o WEBP.",
+)
+
+if load_folder_clicked:
+    docs_from_folder, folder_error = _load_documents_from_folder(folder_path.strip())
+    if folder_error:
+        st.session_state["folder_load_error"] = folder_error
+        st.session_state["folder_loaded_items"] = []
+    else:
+        st.session_state["folder_load_error"] = None
+        st.session_state["folder_loaded_items"] = docs_from_folder
+        st.session_state["folder_path"] = folder_path.strip()
 
 pdf_items: list[dict[str, Any]] = []
-if load_folder_clicked and folder_path.strip():
-    pdf_items = _load_pdfs_from_folder(folder_path.strip())
-elif uploaded_pdfs:
-    pdf_items = _load_pdfs_from_uploads(list(uploaded_pdfs))
+folder_error = st.session_state.get("folder_load_error")
+if isinstance(folder_error, str) and folder_error.strip():
+    st.error(folder_error)
+if uploaded_documents:
+    pdf_items = _load_documents_from_uploads(list(uploaded_documents))
+elif isinstance(st.session_state.get("folder_loaded_items"), list) and st.session_state.get("folder_loaded_items"):
+    pdf_items = st.session_state.get("folder_loaded_items", [])
 
 if pdf_items:
     expediente_texts: list[str] = []
@@ -224,30 +1448,47 @@ if pdf_items:
 
     for i, item in enumerate(pdf_items):
         name = str(item.get("name") or f"documento_{i+1}.pdf")
-        pdf_bytes = item.get("bytes") or b""
+        file_bytes = item.get("bytes") or b""
         source = str(item.get("source") or "-")
         path = item.get("path")
+        input_kind = str(item.get("input_kind") or "pdf")
 
-        doc_id = hashlib.sha256(pdf_bytes).hexdigest() if isinstance(pdf_bytes, (bytes, bytearray)) else ""
-        extracted = extract_text_from_pdf_bytes(pdf_bytes)
-        text = extracted.get("text") or ""
-        pages = extracted.get("page_texts") if isinstance(extracted.get("page_texts"), list) else None
-        pages_n = extracted.get("pages")
-        method = extracted.get("method")
+        doc_id = hashlib.sha256(file_bytes).hexdigest() if isinstance(file_bytes, (bytes, bytearray)) else ""
 
-        if not text and use_vision:
-            if extract_text_from_scanned_pdf_bytes is None:
-                st.error(
-                    "No está disponible la función de OCR. Detén y vuelve a iniciar Streamlit "
-                    "para recargar los módulos, y verifica que tu entorno tenga el código actualizado."
-                )
+        if input_kind == "image":
+            image_ocr_fn = _resolve_document_loader_attr("extract_text_from_image_bytes")
+            if image_ocr_fn is None:
+                st.error(_document_loader_error_message("No esta disponible la funcion de OCR para imagenes."))
+                continue
             else:
-                with st.spinner(f"Extrayendo texto con OCR — {name}..."):
-                    extracted_v = extract_text_from_scanned_pdf_bytes(pdf_bytes)
-                text = extracted_v.get("text") or ""
-                pages = extracted_v.get("page_texts") if isinstance(extracted_v.get("page_texts"), list) else pages
-                pages_n = extracted_v.get("pages") or pages_n
-                method = extracted_v.get("method") or "vision"
+                with st.spinner(f"Extrayendo texto desde imagen — {name}..."):
+                    extracted = image_ocr_fn(file_bytes)
+                text = extracted.get("text") or ""
+                pages = extracted.get("page_texts") if isinstance(extracted.get("page_texts"), list) else None
+                pages_n = extracted.get("pages")
+                method = extracted.get("method") or "easyocr"
+        else:
+            pdf_extract_fn = _resolve_document_loader_attr("extract_text_from_pdf_bytes")
+            if pdf_extract_fn is None:
+                st.error(_document_loader_error_message("No esta disponible la funcion de lectura de PDF."))
+                continue
+            extracted = pdf_extract_fn(file_bytes)
+            text = extracted.get("text") or ""
+            pages = extracted.get("page_texts") if isinstance(extracted.get("page_texts"), list) else None
+            pages_n = extracted.get("pages")
+            method = extracted.get("method")
+
+            if not text and use_vision:
+                scanned_pdf_ocr_fn = _resolve_document_loader_attr("extract_text_from_scanned_pdf_bytes")
+                if scanned_pdf_ocr_fn is None:
+                    st.error(_document_loader_error_message("No está disponible la función de OCR."))
+                else:
+                    with st.spinner(f"Extrayendo texto con OCR — {name}..."):
+                        extracted_v = scanned_pdf_ocr_fn(file_bytes)
+                    text = extracted_v.get("text") or ""
+                    pages = extracted_v.get("page_texts") if isinstance(extracted_v.get("page_texts"), list) else pages
+                    pages_n = extracted_v.get("pages") or pages_n
+                    method = extracted_v.get("method") or "vision"
 
         expediente_texts.append(text)
         expediente_pages.append(pages)
@@ -257,6 +1498,7 @@ if pdf_items:
                 "doc_index": i + 1,
                 "documento": name,
                 "origen": source,
+                "tipo_entrada": input_kind,
                 "folios": pages_n,
                 "metodo": method,
                 "caracteres": len(text or ""),
@@ -275,6 +1517,7 @@ if pdf_items:
 
     st.subheader("Documentos cargados")
     st.dataframe(expediente_meta, use_container_width=True, hide_index=True)
+    _render_loaded_documents_preview(pdf_items=pdf_items)
     st.session_state["input_text"] = "\n\n".join(
         f"=== Documento {i+1}: {expediente_meta[i]['documento']} ===\n{expediente_texts[i]}"
         for i in range(len(expediente_texts))
@@ -325,7 +1568,7 @@ with top_left:
         "Texto del documento",
         key="input_text",
         height=240,
-        placeholder="Pega aquí el texto del documento o sube un PDF(s) arriba.",
+        placeholder="Pega aquí el texto del documento o sube PDF, PNG, JPG, JPEG o WEBP arriba.",
         label_visibility="visible",
     )
     run_clicked = st.button("Ejecutar análisis", type="primary", disabled=not text.strip())
@@ -334,8 +1577,8 @@ if run_clicked:
     try:
         # Iniciar medición de tiempo y RAM
         start_time = time.perf_counter()
-        process = psutil.Process()
-        ram_start = process.memory_info().rss / (1024 * 1024)  # RAM inicial en MB
+        process = psutil.Process() if psutil is not None else None
+        ram_start = process.memory_info().rss / (1024 * 1024) if process is not None else 0.0
         
         with st.spinner("Ejecutando pipeline (extracción → normalización → validación → auditoría)..."):
             expediente_texts = st.session_state.get("expediente_texts")
@@ -363,7 +1606,7 @@ if run_clicked:
         
         # Calcular tiempo y RAM final
         end_time = time.perf_counter()
-        ram_end = process.memory_info().rss / (1024 * 1024)
+        ram_end = process.memory_info().rss / (1024 * 1024) if process is not None else ram_start
         processing_time = end_time - start_time
         ram_used = ram_end - ram_start
         
@@ -375,16 +1618,19 @@ if run_clicked:
                 file_name = uploaded_names[i] if i < len(uploaded_names) else f"document_{doc_index}.pdf"
                 doc_meta = expediente_meta[i] if i < len(expediente_meta) else {}
                 method = doc_meta.get("metodo", "pypdf")
+                input_kind = doc_meta.get("tipo_entrada", "pdf")
                 
                 # Determinar tipo de archivo
-                if method == "easyocr":
+                if input_kind == "image":
+                    file_type = "image"
+                elif method == "easyocr":
                     file_type = "scanned_pdf"
                 elif method == "vision" or method == "ollama_vision":
                     file_type = "scanned_pdf"
                 else:
                     file_type = "native_pdf"
                 
-                extracted_fields = doc_result.get("extracted", {}).get("fields", {})
+                extracted_fields = doc_result.get("extracted", {})
                 save_execution_log(
                     file_name=file_name,
                     file_type=file_type,
@@ -399,16 +1645,19 @@ if run_clicked:
             file_name = uploaded_names[0] if uploaded_names else "document_1.pdf"
             doc_meta = expediente_meta[0] if expediente_meta else {}
             method = doc_meta.get("metodo", "pypdf")
+            input_kind = doc_meta.get("tipo_entrada", "pdf")
             
             # Determinar tipo de archivo
-            if method == "easyocr":
+            if input_kind == "image":
+                file_type = "image"
+            elif method == "easyocr":
                 file_type = "scanned_pdf"
             elif method == "vision" or method == "ollama_vision":
                 file_type = "scanned_pdf"
             else:
                 file_type = "native_pdf"
             
-            extracted_fields = result.get("extracted", {}).get("fields", {})
+            extracted_fields = result.get("extracted", {})
             save_execution_log(
                 file_name=file_name,
                 file_type=file_type,
@@ -471,9 +1720,12 @@ if isinstance(result, dict) and result:
                     rules = report_json.get("decision_rules") if isinstance(report_json.get("decision_rules"), list) else []
                     reglas_total = len(rules)
                     reglas_ok = len([r for r in rules if isinstance(r, dict) and r.get("cumple") is True])
+                    estado, motivo_estado = _document_status_info(doc_result=d)
                     rows.append(
                         {
                             "doc_index": (idx_doc + 1) if isinstance(idx_doc, int) else idx_doc,
+                            "estado": estado,
+                            "motivo_estado": motivo_estado,
                             "document_type": d.get("document_type"),
                             "valido": validation.get("valid") if isinstance(validation, dict) else None,
                             "incidencias": len(validation.get("issues", []) or []) if isinstance(validation, dict) else None,
@@ -482,48 +1734,137 @@ if isinstance(result, dict) and result:
                             "reglas_total": reglas_total,
                         }
                     )
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+            c_exp_1, c_exp_2, c_exp_3 = st.columns([1, 1, 1])
+            with c_exp_1:
+                st.download_button(
+                    "Descargar expediente JSON",
+                    data=json.dumps(result, ensure_ascii=False, indent=2).encode("utf-8"),
+                    file_name="docaudit_expediente.json",
+                    mime="application/json",
+                    key="download_expediente_json",
+                )
+            with c_exp_2:
+                st.download_button(
+                    "Descargar resumen CSV",
+                    data=_rows_to_csv_bytes(rows=rows),
+                    file_name="docaudit_expediente_resumen.csv",
+                    mime="text/csv",
+                    key="download_expediente_csv",
+                    disabled=not rows,
+                )
+
+            selected_statuses = st.multiselect(
+                "Filtrar por estado",
+                options=["OK", "REVISAR", "CRITICO"],
+                default=["OK", "REVISAR", "CRITICO"],
+                key="expediente_status_filter",
+            )
+            filtered_rows = [
+                row for row in rows
+                if not selected_statuses or str(row.get("estado") or "") in selected_statuses
+            ]
+            issue_rows = _collect_issue_rows(docs=[d for d in docs if isinstance(d, dict)], meta=meta if isinstance(meta, list) else None)
+            issue_summary_rows = _summarize_issue_patterns(issue_rows=issue_rows)
+            autocorrection_rows = _collect_autocorrection_rows(
+                docs=[d for d in docs if isinstance(d, dict)],
+                meta=meta if isinstance(meta, list) else None,
+            )
+
+            c_stat_1, c_stat_2, c_stat_3, c_stat_4 = st.columns(4)
+            c_stat_1.metric("Total docs", str(len(rows)))
+            c_stat_2.metric("OK", str(len([r for r in rows if r.get("estado") == "OK"])))
+            c_stat_3.metric("Revisar", str(len([r for r in rows if r.get("estado") == "REVISAR"])))
+            c_stat_4.metric("Crítico", str(len([r for r in rows if r.get("estado") == "CRITICO"])))
+
+            c_ana_1, c_ana_2, c_ana_3 = st.columns(3)
+            c_ana_1.metric("Incidencias totales", str(len(issue_rows)))
+            c_ana_2.metric("Patrones de error", str(len(issue_summary_rows)))
+            c_ana_3.metric("Autocorrecciones", str(len(autocorrection_rows)))
+
+            with st.expander("Analítica del expediente", expanded=False):
+                c_dl_1, c_dl_2 = st.columns(2)
+                with c_dl_1:
+                    st.download_button(
+                        "Descargar incidencias CSV",
+                        data=_rows_to_csv_bytes(rows=issue_rows),
+                        file_name="docaudit_incidencias.csv",
+                        mime="text/csv",
+                        key="download_issues_csv",
+                        disabled=not issue_rows,
+                    )
+                with c_dl_2:
+                    st.download_button(
+                        "Descargar autocorrecciones CSV",
+                        data=_rows_to_csv_bytes(rows=autocorrection_rows),
+                        file_name="docaudit_autocorrecciones.csv",
+                        mime="text/csv",
+                        key="download_autocorrections_csv",
+                        disabled=not autocorrection_rows,
+                    )
+
+                st.write("Errores frecuentes")
+                if issue_summary_rows:
+                    st.dataframe(issue_summary_rows, use_container_width=True, hide_index=True)
+                else:
+                    st.success("No se detectaron incidencias en el expediente.")
+
+                st.write("Autocorrecciones aplicadas")
+                if autocorrection_rows:
+                    st.dataframe(autocorrection_rows, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No se aplicaron autocorrecciones en este expediente.")
+
+            st.dataframe(filtered_rows, use_container_width=True, hide_index=True)
             if isinstance(meta, list) and meta:
                 st.write("Archivos y folios")
                 st.dataframe(meta, use_container_width=True, hide_index=True)
 
-            if isinstance(docs, list) and docs:
-                opciones = [f"Documento {int(d.get('doc_index'))+1 if isinstance(d.get('doc_index'), int) else d.get('doc_index')}" for d in docs if isinstance(d, dict)]
-                sel = st.selectbox("Ver detalle por documento", options=opciones)
+            filtered_docs: list[dict[str, Any]] = []
+            filtered_meta: list[dict[str, Any]] = []
+            if isinstance(docs, list):
+                for idx_doc, d in enumerate(docs):
+                    if not isinstance(d, dict):
+                        continue
+                    estado_doc, _ = _document_status_info(doc_result=d)
+                    if selected_statuses and estado_doc not in selected_statuses:
+                        continue
+                    filtered_docs.append(d)
+                    if isinstance(meta, list) and idx_doc < len(meta) and isinstance(meta[idx_doc], dict):
+                        filtered_meta.append(meta[idx_doc])
+
+            if filtered_docs:
+                opciones = _build_doc_option_labels(
+                    docs=filtered_docs,
+                    meta=filtered_meta if filtered_meta else (meta if isinstance(meta, list) else None),
+                )
+                sel = st.selectbox("Ver detalle por documento", options=opciones, key="expediente_result_selector")
                 sel_idx = opciones.index(sel) if sel in opciones else 0
-                chosen = docs[sel_idx] if sel_idx < len(docs) else None
+                chosen = filtered_docs[sel_idx] if sel_idx < len(filtered_docs) else None
                 if isinstance(chosen, dict):
-                    sub_tabs = st.tabs(["Extracción", "Normalización", "Validación", "Auditoría", "JSON"])
-                    with sub_tabs[0]:
-                        st.dataframe(
-                            _to_table_rows(extracted=chosen.get("extracted") or {}, schema=None),
-                            use_container_width=True,
-                            hide_index=True,
+                    estado_doc, motivo_doc = _document_status_info(doc_result=chosen)
+                    if filtered_meta and sel_idx < len(filtered_meta) and isinstance(filtered_meta[sel_idx], dict):
+                        chosen_meta = filtered_meta[sel_idx]
+                        st.caption(
+                            f"Archivo: {chosen_meta.get('documento') or '-'} | "
+                            f"Origen: {chosen_meta.get('origen') or '-'} | "
+                            f"Método: {chosen_meta.get('metodo') or '-'}"
                         )
-                        _render_json(label="Ver extracted_raw", payload=chosen.get("extracted_raw"))
-                    with sub_tabs[1]:
-                        norm = chosen.get("normalization") if isinstance(chosen.get("normalization"), dict) else {}
-                        changes = norm.get("changes") if isinstance(norm.get("changes"), list) else []
-                        if changes:
-                            st.dataframe(changes, use_container_width=True, hide_index=True)
-                        _render_json(label="Ver normalizado (JSON)", payload=norm.get("normalized"))
-                    with sub_tabs[2]:
-                        val = chosen.get("validation") if isinstance(chosen.get("validation"), dict) else {}
-                        issues = val.get("issues") if isinstance(val.get("issues"), list) else []
-                        _render_issues_table(issues=issues)
-                        _render_json(label="Ver validación (JSON)", payload=val)
-                    with sub_tabs[3]:
-                        rep = chosen.get("report") if isinstance(chosen.get("report"), dict) else {}
-                        rep_json = rep.get("json") if isinstance(rep.get("json"), dict) else {}
-                        rep_md = rep.get("markdown") if isinstance(rep.get("markdown"), str) else ""
-                        score = rep_json.get("score_confianza")
-                        if isinstance(score, (int, float)):
-                            _render_score_gauge(score=float(score), key=f"score_confianza_doc_{sel_idx}")
-                        if rep_md:
-                            st.markdown(rep_md)
-                        _render_json(label="Ver informe (JSON)", payload=rep_json)
-                    with sub_tabs[4]:
-                        st.json(chosen)
+                    c_doc_1, c_doc_2 = st.columns([2, 1])
+                    with c_doc_1:
+                        st.info(f"Estado del documento: {estado_doc} | {motivo_doc}")
+                    with c_doc_2:
+                        raw_index = chosen.get("doc_index")
+                        export_idx = (raw_index + 1) if isinstance(raw_index, int) else (sel_idx + 1)
+                        st.download_button(
+                            "Descargar documento JSON",
+                            data=json.dumps(chosen, ensure_ascii=False, indent=2).encode("utf-8"),
+                            file_name=f"docaudit_documento_{export_idx}.json",
+                            mime="application/json",
+                            key=f"download_doc_{sel_idx}",
+                        )
+                    _render_document_result_detail(chosen=chosen, selection_key=f"doc_{sel_idx}")
+            elif rows:
+                st.info("No hay documentos que coincidan con el filtro seleccionado.")
 
     with tab_summary:
         report = result.get("report", {}) or {}

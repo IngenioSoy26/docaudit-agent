@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Hilda",
+  "primer_apellido": "Juan",
+  "segundo_apellido": "Iriarte",
+  "num_documento": "50537499B",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "2002-11-02",
+  "fecha_expedicion": "2023-05-19",
+  "fecha_caducidad": "2029-01-15",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Paseo Toni Clemente 4 Piso 1 , Cantabria, 23706",
+  "actividad_economica": "Profesional por cuenta ajena",
+  "proposito_relacion": "Apertura de cuenta y verificacion de identidad",
+  "pep": false,
+  "titular_real_identificado": true,
+  "coincidencia_sanciones": false,
+  "nivel_riesgo": "bajo"
+}

@@ -1,0 +1,30 @@
+{
+  "id": "credito_hipotecario_image_handwritten_conforme_003",
+  "schema_name": "credito_hipotecario",
+  "variant": "image_handwritten",
+  "variant_description": "Documento con notas manuscritas o contenido a mano alzada",
+  "compliance_expected": "conforme",
+  "country": "Espana",
+  "legal_basis": [
+    "Espana - RGPD art. 5",
+    "Espana - RGPD art. 25",
+    "Espana - RGPD art. 22",
+    "Espana - Ley 5/2019 LCCI",
+    "Espana - Circular 4/2017 Banco de Espana"
+  ],
+  "source_pdf_path": "data/sample_docs/caso_uso_1_auditoria_hipotecaria/contrato_hipoteca_esp_0003.pdf",
+  "source_ground_truth_path": "data/sample_docs/caso_uso_1_auditoria_hipotecaria/ground_truth_esp_0003.json",
+  "target_file_path": "test_data/experimentos_120/credito_hipotecario/image_handwritten/conforme/credito_hipotecario_image_handwritten_conforme_003.jpg",
+  "target_ground_truth_path": "test_data/experimentos_120/credito_hipotecario/image_handwritten/conforme/credito_hipotecario_image_handwritten_conforme_003_ground_truth.json",
+  "rule_break_plan": [],
+  "generation_notes": [
+    "Anadir notas a mano alzada, marcas o texto manuscrito sobre el documento.",
+    "Puede ser documento fotografiado o escaneado como imagen."
+  ],
+  "instructions": [
+    "Crear o capturar el documento en el formato indicado.",
+    "Guardar el fichero final exactamente en target_file_path.",
+    "Si el caso es no conforme, ajustar tambien el ground truth final.",
+    "Cuando el caso quede listo, actualizar el manifiesto y marcar acquisition_status como ready."
+  ]
+}

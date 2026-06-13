@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Águila y Amat S.L.",
+  "direccion_emisor": "Calle Control Interno 42, Madrid",
+  "nif_emisor": "A7556734A",
+  "nombre_destinatario": "Cliente Auditoria 02 S.L.",
+  "nif_destinatario": "B7000002C",
+  "num_factura": "FAC-2026-0002",
+  "serie_factura": "SER-A",
+  "fecha_expedicion": "2026-03-09",
+  "fecha_operacion": "2026-03-07",
+  "descripcion_operacion": "Servicios profesionales de auditoria documental lote 02",
+  "base_imponible": 3322.87,
+  "tipo_iva": 4,
+  "cuota_iva": 132.91,
+  "retencion_irpf": 232.6,
+  "importe_total": 3223.18
+}

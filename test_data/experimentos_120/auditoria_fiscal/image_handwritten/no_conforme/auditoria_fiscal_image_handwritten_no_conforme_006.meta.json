@@ -1,0 +1,33 @@
+{
+  "id": "auditoria_fiscal_image_handwritten_no_conforme_006",
+  "schema_name": "auditoria_fiscal",
+  "variant": "image_handwritten",
+  "variant_description": "Documento con notas manuscritas o contenido a mano alzada",
+  "compliance_expected": "no_conforme",
+  "country": "Espana",
+  "legal_basis": [
+    "Espana - RGPD art. 5",
+    "Espana - RGPD art. 25",
+    "Espana - Real Decreto 1619/2012",
+    "Espana - Ley 37/1992 del IVA"
+  ],
+  "source_pdf_path": "data/sample_docs/caso_uso_2_auditoria_fiscal/factura_fiscal_5.pdf",
+  "source_ground_truth_path": "data/sample_docs/caso_uso_2_auditoria_fiscal/factura_fiscal_5.json",
+  "target_file_path": "test_data/experimentos_120/auditoria_fiscal/image_handwritten/no_conforme/auditoria_fiscal_image_handwritten_no_conforme_006.jpg",
+  "target_ground_truth_path": "test_data/experimentos_120/auditoria_fiscal/image_handwritten/no_conforme/auditoria_fiscal_image_handwritten_no_conforme_006_ground_truth.json",
+  "rule_break_plan": [
+    "Modificar tipo de IVA a un valor no permitido",
+    "Descuadrar cuota IVA o importe total",
+    "Eliminar numero de factura o fecha obligatoria"
+  ],
+  "generation_notes": [
+    "Anadir notas a mano alzada, marcas o texto manuscrito sobre el documento.",
+    "Puede ser documento fotografiado o escaneado como imagen."
+  ],
+  "instructions": [
+    "Crear o capturar el documento en el formato indicado.",
+    "Guardar el fichero final exactamente en target_file_path.",
+    "Si el caso es no conforme, ajustar tambien el ground truth final.",
+    "Cuando el caso quede listo, actualizar el manifiesto y marcar acquisition_status como ready."
+  ]
+}

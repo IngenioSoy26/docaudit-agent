@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 """
-Carga de documentos (PDF) y extracción de texto.
+Carga de documentos y extracción de texto.
 
-Soporta dos rutas:
+Soporta:
 - PDF nativo: extrae texto embebido (Docling si está instalado; fallback a PyPDF).
-- PDF escaneado: extrae imágenes y transcribe con un modelo de visión en Ollama (Qwen2.5-VL).
+- PDF escaneado: usa EasyOCR como ruta principal y Qwen2.5-VL como fallback.
+- Imagen suelta (PNG/JPG/JPEG/WEBP): usa EasyOCR como ruta principal y Qwen2.5-VL como fallback.
 
 La salida se devuelve como {text, pages, page_texts, ...} para alimentar el grafo de agentes.
 """
 
 import io
+import re
 import tempfile
 from typing import Any
 
@@ -18,6 +20,84 @@ from pypdf import PdfReader
 
 from core.ollama_http import chat_with_images
 from core.settings import settings
+
+
+def _score_ocr_candidate(text: str, confidences: list[float] | None = None) -> float:
+    """Calcula una puntuación heurística para elegir la mejor orientación OCR."""
+    normalized = " ".join((text or "").split())
+    if not normalized:
+        return 0.0
+
+    letters = sum(ch.isalpha() for ch in normalized)
+    digits = sum(ch.isdigit() for ch in normalized)
+    symbols = sum(1 for ch in normalized if not ch.isalnum() and not ch.isspace())
+    word_like = len(re.findall(r"[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]{2,}", normalized))
+    avg_conf = (sum(confidences or []) / len(confidences)) if confidences else 0.0
+
+    return (letters * 1.8) + (digits * 0.8) + (word_like * 8.0) + (avg_conf * 40.0) - (symbols * 2.5)
+
+
+def _easyocr_best_text(image_bytes: bytes, reader: Any | None = None) -> str:
+    """Ejecuta EasyOCR probando varias orientaciones y devuelve la mejor lectura."""
+    import easyocr
+    from PIL import Image, ImageOps
+
+    if reader is None:
+        reader = easyocr.Reader(["es", "en"], gpu=False)
+    base_img = Image.open(io.BytesIO(image_bytes))
+    base_img = ImageOps.exif_transpose(base_img).convert("RGB")
+
+    candidates: list[tuple[float, str]] = []
+    for angle in (0, 90, 180, 270):
+        rotated = base_img.rotate(angle, expand=True) if angle else base_img.copy()
+        prepared = ImageOps.autocontrast(ImageOps.grayscale(rotated))
+        results = reader.readtext(prepared, detail=1)
+        texts = [str(item[1]).strip() for item in results if len(item) >= 2 and str(item[1]).strip()]
+        confidences = [float(item[2]) for item in results if len(item) >= 3 and isinstance(item[2], (int, float))]
+        page_text = "\n".join(texts).strip()
+        candidates.append((_score_ocr_candidate(page_text, confidences), page_text))
+
+    best_score, best_text = max(candidates, key=lambda item: item[0], default=(0.0, ""))
+    return best_text if best_score > 0 else ""
+
+
+def _ocr_image_bytes(image_bytes: bytes) -> dict[str, Any]:
+    """Extrae texto de una imagen usando EasyOCR y Qwen2.5-VL como fallback."""
+    image_bytes = _downscale_image_bytes(image_bytes)
+    texts: list[str] = []
+    method = "easyocr"
+
+    try:
+        page_text = _easyocr_best_text(image_bytes)
+        if page_text:
+            texts.append(page_text)
+    except ImportError:
+        method = "ollama_vision"
+    except Exception:
+        method = "ollama_vision"
+
+    if not texts:
+        prompt = (
+            "Extrae el texto visible de la imagen. Incluye nombres, fechas, numeros, importes y direcciones. "
+            "No agregues comentarios. Devuelve solo el texto extraido."
+        )
+        try:
+            content = chat_with_images(prompt, [image_bytes]).strip()
+            if content:
+                texts.append(content)
+            method = "ollama_vision"
+        except Exception:
+            pass
+
+    text = "\n\n".join(texts).strip()
+    page_texts = [text] if text else [""]
+    return {
+        "text": text,
+        "pages": 1,
+        "page_texts": page_texts,
+        "images": 1,
+        "method": method,
+    }
 
 
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
@@ -142,18 +222,13 @@ def extract_text_from_scanned_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
     # -------------------------------
     try:
         import easyocr
-        from PIL import Image
 
         # Inicializamos lector de EasyOCR para español (y inglés como fallback)
         reader = easyocr.Reader(['es', 'en'], gpu=False)  # gpu=False para compatibilidad universal
 
         for img in images:
             try:
-                # Cargamos la imagen
-                img_pil = Image.open(io.BytesIO(img["data"]))
-                # Extraemos texto con EasyOCR
-                results = reader.readtext(img_pil, detail=0)  # detail=0 devuelve solo texto
-                page_text = "\n".join(results).strip()
+                page_text = _easyocr_best_text(img["data"], reader=reader)
 
                 if page_text:
                     texts.append(page_text)
@@ -206,3 +281,8 @@ def extract_text_from_scanned_pdf_bytes(pdf_bytes: bytes) -> dict[str, Any]:
         "images": len(images),
         "method": final_method
     }
+
+
+def extract_text_from_image_bytes(image_bytes: bytes) -> dict[str, Any]:
+    """Extrae texto desde una imagen suelta."""
+    return _ocr_image_bytes(image_bytes)

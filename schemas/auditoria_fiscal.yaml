@@ -12,19 +12,43 @@ documentos:
         etiqueta: "Denominación social del emisor"
         tipo_dato: string
         requerido: true
+      - nombre: direccion_emisor
+        etiqueta: "Dirección fiscal del emisor"
+        tipo_dato: string
+        requerido: false
       - nombre: nif_emisor
         etiqueta: "Número de Identificación Fiscal (NIF)"
         tipo_dato: string
         requerido: true
         patron: "^[A-HJNP-SUW][0-9]{7}[0-9A-J]$"
+      - nombre: nombre_destinatario
+        etiqueta: "Nombre o razón social del destinatario"
+        tipo_dato: string
+        requerido: false
+      - nombre: nif_destinatario
+        etiqueta: "NIF del destinatario"
+        tipo_dato: string
+        requerido: false
       - nombre: num_factura
         etiqueta: "Número de factura y, en su caso, serie"
         tipo_dato: string
         requerido: true
+      - nombre: serie_factura
+        etiqueta: "Serie de la factura"
+        tipo_dato: string
+        requerido: false
       - nombre: fecha_expedicion
         etiqueta: "Fecha de expedición de la factura"
         tipo_dato: date
         requerido: true
+      - nombre: fecha_operacion
+        etiqueta: "Fecha de operación si difiere de la expedición"
+        tipo_dato: date
+        requerido: false
+      - nombre: descripcion_operacion
+        etiqueta: "Descripción de la operación facturada"
+        tipo_dato: string
+        requerido: false
       - nombre: base_imponible
         etiqueta: "Base imponible de la operación"
         tipo_dato: float
@@ -68,9 +92,30 @@ reglas_decision:
     expresion: "tipo_iva in [21, 10, 4, 0]"
     severidad: critica
     normativa: "Ley 37/1992 del IVA (tipos impositivos)"
+  - id: RF04
+    descripcion: "Fecha de expedición no futura"
+    expresion: "fecha_expedicion <= fecha_actual"
+    severidad: advertencia
+    normativa: "Real Decreto 1619/2012 — fecha de expedición"
+  - id: RF05
+    descripcion: "La fecha de operación, si existe, no es posterior a la expedición"
+    expresion: "fecha_operacion == null or fecha_operacion <= fecha_expedicion"
+    severidad: advertencia
+    normativa: "Real Decreto 1619/2012 — fecha de operación"
+  - id: RF06
+    descripcion: "Descripción de operación presente cuando se informa"
+    expresion: "descripcion_operacion == null or descripcion_operacion != ''"
+    severidad: info
+    normativa: "Real Decreto 1619/2012 — descripción de operaciones"
+  - id: RF07
+    descripcion: "Número de factura informado"
+    expresion: "num_factura != null and num_factura != ''"
+    severidad: critica
+    normativa: "Real Decreto 1619/2012 — numeración"
 
 informe:
   formato: ["json", "markdown"]
+  incluir_evidencias: true
   incluir_score_confianza: true
   nivel_detalle: resumen
   idioma: es

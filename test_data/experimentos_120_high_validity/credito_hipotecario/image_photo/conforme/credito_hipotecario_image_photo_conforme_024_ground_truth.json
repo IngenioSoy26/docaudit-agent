@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0004",
+  "nombre_cliente": "Luz Bejarano Llamas",
+  "dni_cliente": "21193039P",
+  "monto_prestamo_eur": 242066.4,
+  "tasa_interes": 3.19,
+  "tae": 4.3,
+  "plazo_meses": 288,
+  "cuota_mensual_eur": 1025.42,
+  "ingresos_mensuales_eur": 4160,
+  "gastos_mensuales_eur": 870,
+  "ratio_endeudamiento": 0.39,
+  "comision_apertura_eur": 1089.3,
+  "fein_entregada": true,
+  "fiae_entregada": true,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2024-02-08"
+}

@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Isabela",
+  "primer_apellido": "Martínez",
+  "segundo_apellido": "Sureda",
+  "num_documento": "96975564J",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "1980-11-09",
+  "fecha_expedicion": "2023-06-18",
+  "fecha_caducidad": "2029-01-03",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Pasadizo de Candelaria Ferrández 42 Piso 3 , Badajoz, 15058",
+  "actividad_economica": "Profesional por cuenta ajena",
+  "proposito_relacion": "Apertura de cuenta y verificacion de identidad",
+  "pep": false,
+  "titular_real_identificado": true,
+  "coincidencia_sanciones": false,
+  "nivel_riesgo": "bajo"
+}

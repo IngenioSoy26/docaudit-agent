@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Armando",
+  "primer_apellido": "Borrego",
+  "segundo_apellido": "Mariscal",
+  "num_documento": "94460043G",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "2010-04-07",
+  "fecha_expedicion": "2026-07-02",
+  "fecha_caducidad": "2026-04-23",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Calle Glauco Castañeda 227 Piso 2 , Zamora, 39389",
+  "actividad_economica": "Actividad no verificada",
+  "proposito_relacion": "",
+  "pep": true,
+  "titular_real_identificado": false,
+  "coincidencia_sanciones": true,
+  "nivel_riesgo": "bajo"
+}

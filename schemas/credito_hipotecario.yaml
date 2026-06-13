@@ -33,6 +33,61 @@ documentos:
         requerido: true
         validacion:
           rango_min: 0.0
+      - nombre: tae
+        etiqueta: "Tasa anual equivalente (TAE)"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+      - nombre: plazo_meses
+        etiqueta: "Plazo total del préstamo en meses"
+        tipo_dato: int
+        requerido: false
+        validacion:
+          rango_min: 1
+      - nombre: cuota_mensual_eur
+        etiqueta: "Cuota mensual estimada o pactada"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+      - nombre: ingresos_mensuales_eur
+        etiqueta: "Ingresos mensuales declarados"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+      - nombre: gastos_mensuales_eur
+        etiqueta: "Gastos mensuales recurrentes"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+      - nombre: ratio_endeudamiento
+        etiqueta: "Ratio de endeudamiento estimado"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+          rango_max: 1.0
+      - nombre: comision_apertura_eur
+        etiqueta: "Comisión de apertura"
+        tipo_dato: float
+        requerido: false
+        validacion:
+          rango_min: 0.0
+      - nombre: fein_entregada
+        etiqueta: "Entrega de FEIN al prestatario"
+        tipo_dato: bool
+        requerido: false
+      - nombre: fiae_entregada
+        etiqueta: "Entrega de FIAE al prestatario"
+        tipo_dato: bool
+        requerido: false
+      - nombre: sistema_amortizacion
+        etiqueta: "Sistema de amortización"
+        tipo_dato: string
+        requerido: false
       - nombre: fecha_emision
         etiqueta: "Fecha de emisión / firma"
         tipo_dato: date
@@ -54,9 +109,35 @@ reglas_decision:
     expresion: "id_documento != null and id_documento != ''"
     severidad: advertencia
     normativa: "Trazabilidad (control interno)"
+  - id: H04
+    descripcion: "TAE en rango razonable cuando está informada"
+    expresion: "tae == null or (tae >= tasa_interes and tae <= 25)"
+    severidad: advertencia
+    normativa: "Ley 5/2019 (LCCI) — transparencia de coste"
+  - id: H05
+    descripcion: "Plazo positivo cuando está informado"
+    expresion: "plazo_meses == null or plazo_meses > 0"
+    severidad: advertencia
+    normativa: "Ley 5/2019 (LCCI) — condiciones económicas"
+  - id: H06
+    descripcion: "Esfuerzo financiero razonable cuando hay ingresos y cuota"
+    expresion: "ingresos_mensuales_eur == null or cuota_mensual_eur == null or (ingresos_mensuales_eur > 0 and (cuota_mensual_eur / ingresos_mensuales_eur) <= 0.35)"
+    severidad: advertencia
+    normativa: "Circular 4/2017 BdE — capacidad de pago"
+  - id: H07
+    descripcion: "Ratio de endeudamiento razonable cuando está informado"
+    expresion: "ratio_endeudamiento == null or ratio_endeudamiento <= 0.4"
+    severidad: advertencia
+    normativa: "Circular 4/2017 BdE — endeudamiento prudente"
+  - id: H08
+    descripcion: "FEIN y FIAE, si se informan, deben constar como entregadas"
+    expresion: "(fein_entregada == null or fein_entregada == true) and (fiae_entregada == null or fiae_entregada == true)"
+    severidad: info
+    normativa: "Ley 5/2019 (LCCI) — informacion precontractual"
 
 informe:
   formato: ["json", "markdown"]
+  incluir_evidencias: true
   incluir_score_confianza: true
   nivel_detalle: resumen
   idioma: es

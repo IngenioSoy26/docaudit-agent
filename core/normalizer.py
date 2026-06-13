@@ -19,7 +19,7 @@ from typing import Any, Literal
 from core.schema_models import DocSchema, SchemaField
 
 
-ChangeType = Literal["coerce", "trim", "parse"]
+ChangeType = Literal["coerce", "trim", "parse", "reconcile"]
 
 
 @dataclass(frozen=True)
@@ -175,19 +175,225 @@ def _normalize_boolean(value: Any) -> tuple[Any, bool]:
     return value, False
 
 
+def _get_enum_values(field: SchemaField) -> list[str] | None:
+    for rule in field.rules:
+        if rule.kind == "enum":
+            values = rule.params.get("values")
+            if isinstance(values, list):
+                return [str(v) for v in values]
+            break
+    return None
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _round_money(value: float) -> float:
+    return round(float(value), 2)
+
+
+def _money_candidates_from_ocr(raw_value: Any) -> list[float]:
+    """Genera candidatos monetarios a partir de OCR con separadores perdidos."""
+    candidates: list[float] = []
+
+    if _is_number(raw_value):
+        return [_round_money(float(raw_value))]
+
+    if not isinstance(raw_value, str):
+        return candidates
+
+    raw = raw_value.strip()
+    parsed = _parse_number_str(raw)
+    if parsed is not None:
+        candidates.append(_round_money(parsed))
+
+    digits = re.sub(r"\D", "", raw)
+    if digits:
+        integer_value = int(digits)
+        candidates.append(_round_money(float(integer_value)))
+        if len(digits) >= 2:
+            candidates.append(_round_money(integer_value / 10.0))
+        if len(digits) >= 3:
+            candidates.append(_round_money(integer_value / 100.0))
+        if len(digits) >= 4:
+            candidates.append(_round_money(integer_value / 1000.0))
+
+    deduped: list[float] = []
+    seen: set[float] = set()
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            deduped.append(candidate)
+    return deduped
+
+
+def _reconcile_money_field(
+    *,
+    field_name: str,
+    expected: float | None,
+    extracted: dict[str, Any],
+    normalized: dict[str, Any],
+    tolerance: float = 0.15,
+) -> list[NormalizationChange]:
+    """Corrige importes OCR cuando una reinterpretación cuadra con la matemática fiscal."""
+    if expected is None:
+        return []
+
+    current = normalized.get(field_name)
+    current_error = abs(float(current) - expected) if _is_number(current) else float("inf")
+    if current_error <= tolerance:
+        return []
+
+    raw_value = extracted.get(field_name, current)
+    candidates = _money_candidates_from_ocr(raw_value)
+    if not candidates:
+        return []
+
+    best = min(candidates, key=lambda candidate: abs(candidate - expected))
+    best_error = abs(best - expected)
+    if best_error > tolerance or best_error >= current_error:
+        return []
+
+    normalized[field_name] = best
+    return [NormalizationChange(field=field_name, kind="reconcile", before=current, after=best)]
+
+
+def _infer_legal_vat_rate(normalized: dict[str, Any], allowed_rates: list[int]) -> int | None:
+    """Infiere el tipo de IVA más probable usando coherencia matemática."""
+    base = normalized.get("base_imponible")
+    cuota = normalized.get("cuota_iva")
+    total = normalized.get("importe_total")
+    retencion = normalized.get("retencion_irpf")
+
+    candidates: list[tuple[float, int]] = []
+    if _is_number(base) and float(base) > 0 and _is_number(cuota):
+        observed = (float(cuota) / float(base)) * 100.0
+        for rate in allowed_rates:
+            candidates.append((abs(observed - rate), rate))
+
+    if _is_number(base) and float(base) > 0 and _is_number(total):
+        withholding = float(retencion) if _is_number(retencion) else 0.0
+        observed = ((float(total) + withholding - float(base)) / float(base)) * 100.0
+        for rate in allowed_rates:
+            candidates.append((abs(observed - rate), rate))
+
+    if not candidates:
+        return None
+
+    error, rate = min(candidates, key=lambda item: item[0])
+    return rate if error <= 1.25 else None
+
+
+def _reconcile_auditoria_fiscal(
+    *,
+    extracted: dict[str, Any],
+    normalized: dict[str, Any],
+    schema: DocSchema,
+) -> list[NormalizationChange]:
+    """Corrige errores OCR frecuentes en porcentajes fiscales."""
+    if schema.name != "auditoria_fiscal":
+        return []
+
+    tipo_field = next((f for f in schema.fields if f.name == "tipo_iva"), None)
+    if tipo_field is None:
+        return []
+
+    enum_values = _get_enum_values(tipo_field) or []
+    allowed_rates = [int(v) for v in enum_values if re.fullmatch(r"\d+", v)]
+    if not allowed_rates:
+        return []
+
+    current = normalized.get("tipo_iva")
+    raw_value = extracted.get("tipo_iva")
+    raw_text = str(raw_value).strip() if raw_value is not None else ""
+    compact = re.sub(r"\s+", "", raw_text)
+    inferred: int | None = None
+
+    # Errores OCR típicos: "4%" -> "49", "4g", "4o", etc.
+    source_candidates = [compact, str(current).strip() if current is not None else ""]
+    for source in source_candidates:
+        if not source:
+            continue
+        for rate in sorted(allowed_rates, key=lambda item: len(str(item)), reverse=True):
+            prefix = str(rate)
+            if not source.startswith(prefix):
+                continue
+            tail = source[len(prefix):]
+            if tail and len(tail) <= 2 and re.fullmatch(r"[%‰º°oOgGqQ9]+", tail):
+                inferred = rate
+                break
+        if inferred is not None:
+            break
+
+    changes: list[NormalizationChange] = []
+
+    if inferred is None and current not in allowed_rates:
+        inferred = _infer_legal_vat_rate(normalized, allowed_rates)
+
+    if inferred is not None and inferred != current:
+        normalized["tipo_iva"] = inferred
+        changes.append(
+            NormalizationChange(
+                field="tipo_iva",
+                kind="reconcile",
+                before=current,
+                after=inferred,
+            )
+        )
+
+    base = normalized.get("base_imponible")
+    tipo_iva = normalized.get("tipo_iva")
+    cuota_iva = normalized.get("cuota_iva")
+    retencion = normalized.get("retencion_irpf")
+
+    expected_quota: float | None = None
+    if _is_number(base) and _is_number(tipo_iva):
+        expected_quota = _round_money(float(base) * (float(tipo_iva) / 100.0))
+        changes.extend(
+            _reconcile_money_field(
+                field_name="cuota_iva",
+                expected=expected_quota,
+                extracted=extracted,
+                normalized=normalized,
+            )
+        )
+        cuota_iva = normalized.get("cuota_iva")
+
+    if _is_number(base) and _is_number(cuota_iva):
+        withholding = float(retencion) if _is_number(retencion) else 0.0
+        expected_total = _round_money(float(base) + float(cuota_iva) - withholding)
+        changes.extend(
+            _reconcile_money_field(
+                field_name="importe_total",
+                expected=expected_total,
+                extracted=extracted,
+                normalized=normalized,
+            )
+        )
+
+    if "retencion_irpf" in extracted and _is_number(base) and _is_number(cuota_iva) and _is_number(normalized.get("importe_total")):
+        expected_retention = _round_money(float(base) + float(cuota_iva) - float(normalized["importe_total"]))
+        if expected_retention >= 0:
+            changes.extend(
+                _reconcile_money_field(
+                    field_name="retencion_irpf",
+                    expected=expected_retention,
+                    extracted=extracted,
+                    normalized=normalized,
+                )
+            )
+
+    return changes
+
+
 def _normalize_field(field: SchemaField, value: Any) -> tuple[Any, list[NormalizationChange]]:
     """Normaliza un campo según su tipo declarado y reglas (incluyendo enum si aplica)."""
     changes: list[NormalizationChange] = []
     if _is_empty(value):
         return None, changes
 
-    enum_values: list[str] | None = None
-    for r in field.rules:
-        if r.kind == "enum":
-            vals = r.params.get("values")
-            if isinstance(vals, list) and all(isinstance(x, (str, int, float, bool)) for x in vals):
-                enum_values = [str(x) for x in vals]
-            break
+    enum_values = _get_enum_values(field)
 
     if isinstance(value, str):
         trimmed = value.strip()
@@ -265,13 +471,7 @@ def normalize_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[st
     num_field = next((f for f in schema.fields if f.name == "numero_documento"), None)
     if tipo_field and num_field:
         # Compatibilidad: si el schema tiene tipo_documento/numero_documento, inferir el tipo por regex.
-        allowed: list[str] | None = None
-        for r in tipo_field.rules:
-            if r.kind == "enum":
-                vals = r.params.get("values")
-                if isinstance(vals, list):
-                    allowed = [str(x) for x in vals]
-                break
+        allowed = _get_enum_values(tipo_field)
 
         current = normalized.get("tipo_documento")
         numero = normalized.get("numero_documento")
@@ -286,9 +486,18 @@ def normalize_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[st
                 changes.append(NormalizationChange(field="tipo_documento", kind="coerce", before=current, after=inferred))
                 normalized["tipo_documento"] = inferred
 
+    changes.extend(_reconcile_auditoria_fiscal(extracted=extracted, normalized=normalized, schema=schema))
+
+    autocorrections = [
+        {"field": c.field, "kind": c.kind, "before": c.before, "after": c.after}
+        for c in changes
+        if c.kind == "reconcile"
+    ]
+
     return {
         "normalized": normalized,
         "changes": [
             {"field": c.field, "kind": c.kind, "before": c.before, "after": c.after} for c in changes
         ],
+        "autocorrections": autocorrections,
     }

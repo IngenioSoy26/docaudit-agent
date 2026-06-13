@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0008",
+  "nombre_cliente": "Faustino Estrada Vilanova",
+  "dni_cliente": "64792043V",
+  "monto_prestamo_eur": 203683.17,
+  "tasa_interes": 3.14,
+  "tae": 29.5,
+  "plazo_meses": 0,
+  "cuota_mensual_eur": 1479.6,
+  "ingresos_mensuales_eur": 2740,
+  "gastos_mensuales_eur": 1500,
+  "ratio_endeudamiento": 0.58,
+  "comision_apertura_eur": 2240.51,
+  "fein_entregada": false,
+  "fiae_entregada": false,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2020-11-22"
+}
