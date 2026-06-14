@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Roberta",
+  "primer_apellido": "Oliver",
+  "segundo_apellido": "Alvarez",
+  "num_documento": "96856208R",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "2010-05-05",
+  "fecha_expedicion": "2026-06-28",
+  "fecha_caducidad": "2026-04-27",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Cañada Hortensia Leon 72, Valencia, 44823",
+  "actividad_economica": "Actividad no verificada",
+  "proposito_relacion": "",
+  "pep": true,
+  "titular_real_identificado": false,
+  "coincidencia_sanciones": true,
+  "nivel_riesgo": "bajo"
+}

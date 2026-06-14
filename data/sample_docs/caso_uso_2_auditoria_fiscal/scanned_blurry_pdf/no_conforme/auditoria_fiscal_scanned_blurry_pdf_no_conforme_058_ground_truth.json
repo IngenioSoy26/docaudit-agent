@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Hermanos Carballo S.A.",
+  "direccion_emisor": "Avenida Revision Fiscal 88, Valencia",
+  "nif_emisor": "F7626444D",
+  "nombre_destinatario": "Cliente Riesgo 08 S.L.",
+  "nif_destinatario": "B7100008N",
+  "num_factura": "",
+  "serie_factura": "SER-X",
+  "fecha_expedicion": "2026-07-15",
+  "fecha_operacion": "2026-07-19",
+  "descripcion_operacion": "Servicios con incidencia de control fiscal 08",
+  "base_imponible": 2936.51,
+  "tipo_iva": 15,
+  "cuota_iva": 352.38,
+  "retencion_irpf": null,
+  "importe_total": 3334.39
+}

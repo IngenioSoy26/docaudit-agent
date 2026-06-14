@@ -284,6 +284,17 @@ def _document_status_info(*, doc_result: dict[str, Any]) -> tuple[str, str]:
     return "REVISAR", "Pendiente de revision"
 
 
+def _render_document_status_notice(*, status: str, reason: str) -> None:
+    message = f"Estado del documento: {status} | {reason}"
+    if status == "OK":
+        st.success(message)
+        return
+    if status == "CRITICO":
+        st.error(message)
+        return
+    st.warning(message)
+
+
 def _rows_to_csv_bytes(*, rows: list[dict[str, Any]]) -> bytes:
     if not rows:
         return b""
@@ -713,6 +724,45 @@ def _sanitize_folder_path(folder: str) -> Path:
     return Path(raw).expanduser()
 
 
+def _build_extraction_cache_key(*, doc_id: str, input_kind: str, use_vision: bool) -> str:
+    return f"{doc_id}|{input_kind}|vision={int(use_vision)}"
+
+
+def _pick_folder_via_dialog(initial_dir: str | None = None) -> tuple[str | None, str | None]:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception as exc:
+        return None, f"No se pudo abrir el selector de carpetas: {exc}"
+
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        start_dir = _sanitize_folder_path(initial_dir) if initial_dir else PROJECT_ROOT
+        selected = filedialog.askdirectory(initialdir=str(start_dir))
+    except Exception as exc:
+        return None, f"No se pudo abrir el selector de carpetas: {exc}"
+    finally:
+        if root is not None:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+    if not selected:
+        return None, None
+    return selected, None
+
+
+def _browse_folder_callback() -> None:
+    selected, picker_error = _pick_folder_via_dialog(st.session_state.get("folder_path", ""))
+    st.session_state["folder_picker_error"] = picker_error
+    if selected:
+        st.session_state["folder_path"] = selected
+
+
 def _load_documents_from_folder(folder: str) -> tuple[list[dict[str, Any]], str | None]:
     p = _sanitize_folder_path(folder)
     if not str(p).strip():
@@ -765,9 +815,37 @@ def _build_doc_option_labels(*, docs: list[dict[str, Any]], meta: list[dict[str,
     return labels
 
 
-def _render_document_result_detail(*, chosen: dict[str, Any], selection_key: str) -> None:
+def _render_document_result_detail(
+    *,
+    chosen: dict[str, Any],
+    selection_key: str,
+    source_text: str = "",
+) -> None:
+    validation = chosen.get("validation") if isinstance(chosen.get("validation"), dict) else {}
+    report = chosen.get("report") if isinstance(chosen.get("report"), dict) else {}
+    report_json = report.get("json") if isinstance(report.get("json"), dict) else {}
+    issues = validation.get("issues") if isinstance(validation.get("issues"), list) else []
+    estado_doc, motivo_doc = _document_status_info(doc_result=chosen)
+    score = report_json.get("score_confianza")
+
+    c_det_1, c_det_2, c_det_3, c_det_4 = st.columns(4)
+    c_det_1.metric("Estado", estado_doc)
+    c_det_2.metric("Validez", "Válido" if validation.get("valid") else "Revisar")
+    c_det_3.metric("Incidencias", str(len(issues)))
+    c_det_4.metric("Confianza", f"{float(score):.2f}" if isinstance(score, (int, float)) else "-")
+    _render_document_status_notice(status=estado_doc, reason=motivo_doc)
+
     sub_tabs = st.tabs(["Extracción", "Normalización", "Validación", "Auditoría", "JSON"])
     with sub_tabs[0]:
+        if source_text.strip():
+            st.text_area(
+                "Texto extraído del documento",
+                value=source_text,
+                height=220,
+                key=f"source_text_{selection_key}",
+            )
+        else:
+            st.info("No hay texto extraído disponible para este documento.")
         st.dataframe(
             _to_table_rows(extracted=chosen.get("extracted") or {}, schema=None),
             use_container_width=True,
@@ -787,20 +865,15 @@ def _render_document_result_detail(*, chosen: dict[str, Any], selection_key: str
             st.dataframe(autocorrections, use_container_width=True, hide_index=True)
         _render_json(label="Ver normalizado (JSON)", payload=norm.get("normalized"))
     with sub_tabs[2]:
-        val = chosen.get("validation") if isinstance(chosen.get("validation"), dict) else {}
-        issues = val.get("issues") if isinstance(val.get("issues"), list) else []
         _render_issues_table(issues=issues)
-        _render_json(label="Ver validación (JSON)", payload=val)
+        _render_json(label="Ver validación (JSON)", payload=validation)
     with sub_tabs[3]:
-        rep = chosen.get("report") if isinstance(chosen.get("report"), dict) else {}
-        rep_json = rep.get("json") if isinstance(rep.get("json"), dict) else {}
-        rep_md = rep.get("markdown") if isinstance(rep.get("markdown"), str) else ""
-        score = rep_json.get("score_confianza")
+        rep_md = report.get("markdown") if isinstance(report.get("markdown"), str) else ""
         if isinstance(score, (int, float)):
             _render_score_gauge(score=float(score), key=f"score_confianza_{selection_key}")
         if rep_md:
             st.markdown(rep_md)
-        _render_json(label="Ver informe (JSON)", payload=rep_json)
+        _render_json(label="Ver informe (JSON)", payload=report_json)
     with sub_tabs[4]:
         st.json(chosen)
 
@@ -808,29 +881,40 @@ def _render_document_result_detail(*, chosen: dict[str, Any], selection_key: str
 def _render_loaded_documents_preview(*, pdf_items: list[dict[str, Any]]) -> None:
     if not pdf_items:
         return []
-    with st.expander("Ver documentos cargados antes del análisis", expanded=False):
-        options = [str(item.get("name") or f"documento_{i+1}") for i, item in enumerate(pdf_items)]
-        selected = st.selectbox("Documento cargado", options=options, key="preview_loaded_document")
-        selected_idx = options.index(selected) if selected in options else 0
-        item = pdf_items[selected_idx] if selected_idx < len(pdf_items) else {}
-        st.write(f"Origen: {item.get('source') or '-'}")
-        if item.get("path"):
-            st.caption(str(item.get("path")))
-        file_bytes = item.get("bytes") or b""
-        input_kind = str(item.get("input_kind") or "")
-        if input_kind == "image":
-            st.image(file_bytes, caption=str(item.get("name") or "imagen"), use_container_width=True)
-        else:
-            preview_text = st.session_state.get("expediente_texts")
-            if isinstance(preview_text, list) and selected_idx < len(preview_text):
-                st.text_area(
-                    "Texto extraído preliminar",
-                    value=str(preview_text[selected_idx] or ""),
-                    height=260,
-                    key=f"preview_text_{selected_idx}",
-                )
-            else:
-                st.info("El texto extraído se mostrará aquí una vez procesado el documento.")
+    st.write("Explorador de documentos cargados")
+    options = [str(item.get("name") or f"documento_{i+1}") for i, item in enumerate(pdf_items)]
+    selected = st.selectbox("Selecciona un documento cargado", options=options, key="preview_loaded_document")
+    selected_idx = options.index(selected) if selected in options else 0
+    item = pdf_items[selected_idx] if selected_idx < len(pdf_items) else {}
+
+    preview_text = st.session_state.get("expediente_texts")
+    preview_value = ""
+    if isinstance(preview_text, list) and selected_idx < len(preview_text):
+        preview_value = str(preview_text[selected_idx] or "")
+
+    c_prev_1, c_prev_2, c_prev_3, c_prev_4 = st.columns(4)
+    c_prev_1.metric("Documento", str(selected_idx + 1))
+    c_prev_2.metric("Origen", str(item.get("source") or "-"))
+    c_prev_3.metric("Tipo", str(item.get("input_kind") or "-"))
+    c_prev_4.metric("Caracteres", str(len(preview_value)))
+
+    if item.get("path"):
+        st.caption(str(item.get("path")))
+
+    file_bytes = item.get("bytes") or b""
+    input_kind = str(item.get("input_kind") or "")
+    if input_kind == "image":
+        st.image(file_bytes, caption=str(item.get("name") or "imagen"), use_container_width=True)
+
+    if preview_value.strip():
+        st.text_area(
+            "Texto extraído preliminar",
+            value=preview_value,
+            height=260,
+            key=f"preview_text_{selected_idx}",
+        )
+    else:
+        st.info("El texto extraído se mostrará aquí una vez procesado el documento.")
 
 
 def _load_documents_from_uploads(uploaded: list[Any]) -> list[dict[str, Any]]:
@@ -1374,12 +1458,23 @@ with st.sidebar:
     )
     st.divider()
     st.subheader("Carpeta")
+    if "folder_path" not in st.session_state:
+        st.session_state["folder_path"] = ""
+    if "folder_picker_error" not in st.session_state:
+        st.session_state["folder_picker_error"] = None
     folder_path = st.text_input(
         "Ruta de carpeta (PDFs e imagenes)",
-        value=st.session_state.get("folder_path", ""),
         key="folder_path",
+        help="Puedes escribir la ruta manualmente o usar el boton 'Buscar carpeta'.",
     )
-    load_folder_clicked = st.button("Cargar documentos desde carpeta")
+    col_folder_1, col_folder_2 = st.columns([1, 1])
+    with col_folder_1:
+        st.button("Buscar carpeta", on_click=_browse_folder_callback, use_container_width=True)
+    with col_folder_2:
+        load_folder_clicked = st.button("Cargar documentos desde carpeta", use_container_width=True)
+    picker_error = st.session_state.get("folder_picker_error")
+    if isinstance(picker_error, str) and picker_error.strip():
+        st.error(picker_error)
     st.divider()
     st.subheader("Esquemas YAML")
     st.caption("Edición avanzada. Recomendado solo si necesitas ajustar campos/reglas.")
@@ -1429,7 +1524,6 @@ if load_folder_clicked:
     else:
         st.session_state["folder_load_error"] = None
         st.session_state["folder_loaded_items"] = docs_from_folder
-        st.session_state["folder_path"] = folder_path.strip()
 
 pdf_items: list[dict[str, Any]] = []
 folder_error = st.session_state.get("folder_load_error")
@@ -1440,11 +1534,19 @@ if uploaded_documents:
 elif isinstance(st.session_state.get("folder_loaded_items"), list) and st.session_state.get("folder_loaded_items"):
     pdf_items = st.session_state.get("folder_loaded_items", [])
 
+loaded_docs_count = len(pdf_items)
+loaded_image_count = len([item for item in pdf_items if str(item.get("input_kind") or "") == "image"])
+loaded_pdf_count = len([item for item in pdf_items if str(item.get("input_kind") or "") == "pdf"])
+batch_mode_active = loaded_docs_count >= 2
+
 if pdf_items:
     expediente_texts: list[str] = []
     expediente_pages: list[list[str] | None] = []
     expediente_doc_ids: list[str] = []
     expediente_meta: list[dict[str, Any]] = []
+    extraction_cache = st.session_state.setdefault("document_extraction_cache", {})
+    load_progress = None
+    load_status = None
 
     for i, item in enumerate(pdf_items):
         name = str(item.get("name") or f"documento_{i+1}.pdf")
@@ -1454,8 +1556,22 @@ if pdf_items:
         input_kind = str(item.get("input_kind") or "pdf")
 
         doc_id = hashlib.sha256(file_bytes).hexdigest() if isinstance(file_bytes, (bytes, bytearray)) else ""
+        cache_key = _build_extraction_cache_key(doc_id=doc_id or name, input_kind=input_kind, use_vision=use_vision)
+        cached_extraction = extraction_cache.get(cache_key) if isinstance(extraction_cache, dict) else None
 
-        if input_kind == "image":
+        if isinstance(cached_extraction, dict):
+            text = str(cached_extraction.get("text") or "")
+            pages = cached_extraction.get("page_texts") if isinstance(cached_extraction.get("page_texts"), list) else None
+            pages_n = cached_extraction.get("pages")
+            method = cached_extraction.get("method")
+        else:
+            if load_progress is None:
+                load_progress = st.progress(0.0, text="Preparando documentos cargados...")
+                load_status = st.empty()
+            if load_status is not None:
+                load_status.caption(f"Preparando documento {i+1} de {loaded_docs_count}: {name}")
+
+        if not isinstance(cached_extraction, dict) and input_kind == "image":
             image_ocr_fn = _resolve_document_loader_attr("extract_text_from_image_bytes")
             if image_ocr_fn is None:
                 st.error(_document_loader_error_message("No esta disponible la funcion de OCR para imagenes."))
@@ -1467,7 +1583,7 @@ if pdf_items:
                 pages = extracted.get("page_texts") if isinstance(extracted.get("page_texts"), list) else None
                 pages_n = extracted.get("pages")
                 method = extracted.get("method") or "easyocr"
-        else:
+        elif not isinstance(cached_extraction, dict):
             pdf_extract_fn = _resolve_document_loader_attr("extract_text_from_pdf_bytes")
             if pdf_extract_fn is None:
                 st.error(_document_loader_error_message("No esta disponible la funcion de lectura de PDF."))
@@ -1490,6 +1606,14 @@ if pdf_items:
                     pages_n = extracted_v.get("pages") or pages_n
                     method = extracted_v.get("method") or "vision"
 
+        if not isinstance(cached_extraction, dict) and isinstance(extraction_cache, dict):
+            extraction_cache[cache_key] = {
+                "text": text,
+                "page_texts": pages,
+                "pages": pages_n,
+                "method": method,
+            }
+
         expediente_texts.append(text)
         expediente_pages.append(pages)
         expediente_doc_ids.append(doc_id)
@@ -1505,6 +1629,13 @@ if pdf_items:
                 "ruta": path,
             }
         )
+        if load_progress is not None:
+            load_progress.progress((i + 1) / loaded_docs_count, text=f"Documentos preparados: {i + 1}/{loaded_docs_count}")
+
+    if load_status is not None:
+        load_status.empty()
+    if load_progress is not None:
+        load_progress.empty()
 
     st.session_state["expediente_texts"] = expediente_texts
     st.session_state["expediente_pages"] = expediente_pages
@@ -1516,6 +1647,18 @@ if pdf_items:
         st.session_state["doc_id"] = expediente_doc_ids[0]
 
     st.subheader("Documentos cargados")
+    st.caption("Paso 2 de 3: revisa el lote cargado antes de ejecutar el análisis.")
+    c_load_1, c_load_2, c_load_3, c_load_4 = st.columns(4)
+    c_load_1.metric("Documentos", str(loaded_docs_count))
+    c_load_2.metric("PDF", str(loaded_pdf_count))
+    c_load_3.metric("Imágenes", str(loaded_image_count))
+    c_load_4.metric("Modo", "Lote" if batch_mode_active else "Individual")
+    if batch_mode_active:
+        st.info(
+            "La app procesará todos los documentos cargados en una sola ejecución y conservará resultados individuales por archivo."
+        )
+    else:
+        st.info("La app procesará el documento cargado y mostrará su resultado individual.")
     st.dataframe(expediente_meta, use_container_width=True, hide_index=True)
     _render_loaded_documents_preview(pdf_items=pdf_items)
     st.session_state["input_text"] = "\n\n".join(
@@ -1523,55 +1666,62 @@ if pdf_items:
         for i in range(len(expediente_texts))
     )
 
-top_left, top_right = st.columns([2, 1])
+st.subheader("Preparación y ejecución")
+with st.container(border=True):
+    st.caption("Paso 3 de 3: lanza el análisis del documento actual o de todo el lote cargado.")
 
-with top_right:
-    st.subheader("Ejemplos rápidos")
-    if st.button("Ejemplo (hipotecario)"):
-        st.session_state["input_text"] = (
-            "Escritura de préstamo hipotecario. Comparecen D./Dña. Armida Falcón Trillo, con DNI 86473212N. "
-            "Capital de 157.520,60 Euros al 3,6 % anual. a 2025-03-08."
-        )
-    if st.button("Ejemplo (factura)"):
-        st.session_state["input_text"] = (
-            "FACTURA FAC-2026-0001. Emisor: Proveedor Demo S.L. NIF: A1234567B. "
-            "Fecha: 2026-01-15. Base imponible: 100,00 EUR. Tipo IVA: 21%. Cuota IVA: 21,00. Total: 121,00."
-        )
-    if st.button("Ejemplo (KYC)"):
-        st.session_state["input_text"] = (
-            "Expediente KYC. Nombre: Juan. Primer apellido: Pérez. Segundo apellido: García. "
-            "Documento: 12345678Z. Fecha nacimiento: 1990-01-01. Fecha caducidad: 2099-01-01. "
-            "Domicilio: Calle Ejemplo 1, Madrid, 28001."
-        )
-    if st.button("Demo normalización (sin LLM)"):
-        schema = load_schema(PROJECT_ROOT / "schemas" / "credito_hipotecario.yaml")
-        raw = {
-            "id_documento": "HIP-0001",
-            "nombre_cliente": "Armida Falcón Trillo",
-            "dni_cliente": "86473212N",
-            "monto_prestamo_eur": "157.520,60 EUR",
-            "tasa_interes": "3,6",
-            "fecha_emision": "2025-03-08",
-        }
-        st.session_state["demo_normalization"] = normalize_extracted(raw, schema)
-    demo_normalization = st.session_state.get("demo_normalization")
-    if demo_normalization:
-        with st.expander("Ver demo de normalización", expanded=False):
-            st.write("Cambios aplicados")
-            st.dataframe(demo_normalization.get("changes", []), use_container_width=True, hide_index=True)
-            st.write("Normalizado")
-            st.json(demo_normalization.get("normalized", {}))
+    panel_left, panel_right = st.columns([2, 1])
+    with panel_left:
+        st.markdown("### Panel de ejecución")
+        if batch_mode_active:
+            st.success(
+                f"Modo lote activo: al pulsar el botón se analizarán los {loaded_docs_count} documentos cargados, con resultados globales e individuales."
+            )
+        elif loaded_docs_count == 1:
+            st.info("Modo individual activo: al pulsar el botón se analizará el documento cargado.")
+        else:
+            st.info("Puedes pegar texto manualmente o cargar uno o varios documentos antes de ejecutar el análisis.")
 
-with top_left:
-    st.subheader("Entrada")
-    text = st.text_area(
-        "Texto del documento",
-        key="input_text",
-        height=240,
-        placeholder="Pega aquí el texto del documento o sube PDF, PNG, JPG, JPEG o WEBP arriba.",
-        label_visibility="visible",
-    )
-    run_clicked = st.button("Ejecutar análisis", type="primary", disabled=not text.strip())
+    with panel_right:
+        c_panel_1, c_panel_2 = st.columns(2)
+        c_panel_1.metric("Modo", "Lote" if batch_mode_active else "Individual")
+        c_panel_2.metric("Documentos", str(loaded_docs_count))
+
+    c_flow_1, c_flow_2, c_flow_3 = st.columns(3)
+    c_flow_1.markdown("**1. Cargar**")
+    c_flow_1.caption("Sube archivos o selecciona una carpeta.")
+    c_flow_2.markdown("**2. Revisar**")
+    c_flow_2.caption("Comprueba el lote y el texto extraído.")
+    c_flow_3.markdown("**3. Ejecutar**")
+    c_flow_3.caption("Procesa uno o todos y revisa resultados individuales.")
+
+text_area_label = "Texto consolidado para análisis" if loaded_docs_count else "Texto del documento"
+text_area_help = (
+    "Este bloque reúne el texto de todos los documentos cargados para la ejecución por lote."
+    if batch_mode_active
+    else None
+)
+text = st.text_area(
+    text_area_label,
+    key="input_text",
+    height=300,
+    placeholder="Pega aquí el texto del documento o sube PDF, PNG, JPG, JPEG o WEBP arriba.",
+    label_visibility="visible",
+    help=text_area_help,
+)
+run_button_label = "Ejecutar análisis"
+if batch_mode_active:
+    run_button_label = f"Ejecutar análisis de los {loaded_docs_count} documentos"
+elif loaded_docs_count == 1:
+    run_button_label = "Ejecutar análisis del documento"
+button_col, help_col = st.columns([2, 1])
+with button_col:
+    run_clicked = st.button(run_button_label, type="primary", disabled=not text.strip(), use_container_width=True)
+with help_col:
+    if text.strip():
+        st.caption("Todo listo para ejecutar.")
+    else:
+        st.caption("Carga documentos o pega texto para habilitar la ejecución.")
 
 if run_clicked:
     try:
@@ -1725,6 +1875,11 @@ if isinstance(result, dict) and result:
                         {
                             "doc_index": (idx_doc + 1) if isinstance(idx_doc, int) else idx_doc,
                             "estado": estado,
+                            "estado_resumen": (
+                                "OK - Valido"
+                                if estado == "OK"
+                                else ("CRITICO - Regla critica" if estado == "CRITICO" else "REVISAR - Revision manual")
+                            ),
                             "motivo_estado": motivo_estado,
                             "document_type": d.get("document_type"),
                             "valido": validation.get("valid") if isinstance(validation, dict) else None,
@@ -1753,12 +1908,33 @@ if isinstance(result, dict) and result:
                     disabled=not rows,
                 )
 
-            selected_statuses = st.multiselect(
-                "Filtrar por estado",
-                options=["OK", "REVISAR", "CRITICO"],
-                default=["OK", "REVISAR", "CRITICO"],
-                key="expediente_status_filter",
+            total_docs = len(rows)
+            ok_count = len([r for r in rows if r.get("estado") == "OK"])
+            revisar_count = len([r for r in rows if r.get("estado") == "REVISAR"])
+            critico_count = len([r for r in rows if r.get("estado") == "CRITICO"])
+            ok_ratio = (ok_count / total_docs) if total_docs else 0.0
+            revisar_ratio = (revisar_count / total_docs) if total_docs else 0.0
+            critico_ratio = (critico_count / total_docs) if total_docs else 0.0
+
+            quick_filter = st.radio(
+                "Vista rápida",
+                options=["Todos", "Solo OK", "Solo revisar", "Solo críticos"],
+                horizontal=True,
+                key="expediente_quick_filter",
             )
+            quick_filter_map = {
+                "Todos": ["OK", "REVISAR", "CRITICO"],
+                "Solo OK": ["OK"],
+                "Solo revisar": ["REVISAR"],
+                "Solo críticos": ["CRITICO"],
+            }
+            default_statuses = quick_filter_map.get(quick_filter, ["OK", "REVISAR", "CRITICO"])
+            with st.expander("Filtro avanzado", expanded=False):
+                selected_statuses = st.multiselect(
+                    "Estados visibles",
+                    options=["OK", "REVISAR", "CRITICO"],
+                    default=default_statuses,
+                )
             filtered_rows = [
                 row for row in rows
                 if not selected_statuses or str(row.get("estado") or "") in selected_statuses
@@ -1771,10 +1947,12 @@ if isinstance(result, dict) and result:
             )
 
             c_stat_1, c_stat_2, c_stat_3, c_stat_4 = st.columns(4)
-            c_stat_1.metric("Total docs", str(len(rows)))
-            c_stat_2.metric("OK", str(len([r for r in rows if r.get("estado") == "OK"])))
-            c_stat_3.metric("Revisar", str(len([r for r in rows if r.get("estado") == "REVISAR"])))
-            c_stat_4.metric("Crítico", str(len([r for r in rows if r.get("estado") == "CRITICO"])))
+            c_stat_1.metric("Total docs", str(total_docs))
+            c_stat_2.metric("OK", str(ok_count), delta=f"{ok_ratio:.0%}")
+            c_stat_3.metric("Revisar", str(revisar_count), delta=f"{revisar_ratio:.0%}")
+            c_stat_4.metric("Crítico", str(critico_count), delta=f"{critico_ratio:.0%}")
+            st.caption("Estados: OK = válido, REVISAR = requiere revisión humana, CRITICO = incumplimiento grave o regla crítica.")
+            st.progress(ok_ratio, text=f"Porcentaje del lote en estado OK: {ok_ratio:.0%}")
 
             c_ana_1, c_ana_2, c_ana_3 = st.columns(3)
             c_ana_1.metric("Incidencias totales", str(len(issue_rows)))
@@ -1814,13 +1992,21 @@ if isinstance(result, dict) and result:
                 else:
                     st.info("No se aplicaron autocorrecciones en este expediente.")
 
-            st.dataframe(filtered_rows, use_container_width=True, hide_index=True)
+            filtered_rows_display = [
+                {
+                    **row,
+                    "estado": row.get("estado_resumen") or row.get("estado"),
+                }
+                for row in filtered_rows
+            ]
+            st.dataframe(filtered_rows_display, use_container_width=True, hide_index=True)
             if isinstance(meta, list) and meta:
                 st.write("Archivos y folios")
                 st.dataframe(meta, use_container_width=True, hide_index=True)
 
             filtered_docs: list[dict[str, Any]] = []
             filtered_meta: list[dict[str, Any]] = []
+            source_texts = st.session_state.get("expediente_texts")
             if isinstance(docs, list):
                 for idx_doc, d in enumerate(docs):
                     if not isinstance(d, dict):
@@ -1833,6 +2019,8 @@ if isinstance(result, dict) and result:
                         filtered_meta.append(meta[idx_doc])
 
             if filtered_docs:
+                st.subheader("Explorador de documentos del expediente")
+                st.caption("Selecciona un archivo para revisar su extracción, validación y auditoría individual.")
                 opciones = _build_doc_option_labels(
                     docs=filtered_docs,
                     meta=filtered_meta if filtered_meta else (meta if isinstance(meta, list) else None),
@@ -1851,7 +2039,7 @@ if isinstance(result, dict) and result:
                         )
                     c_doc_1, c_doc_2 = st.columns([2, 1])
                     with c_doc_1:
-                        st.info(f"Estado del documento: {estado_doc} | {motivo_doc}")
+                        _render_document_status_notice(status=estado_doc, reason=motivo_doc)
                     with c_doc_2:
                         raw_index = chosen.get("doc_index")
                         export_idx = (raw_index + 1) if isinstance(raw_index, int) else (sel_idx + 1)
@@ -1862,7 +2050,17 @@ if isinstance(result, dict) and result:
                             mime="application/json",
                             key=f"download_doc_{sel_idx}",
                         )
-                    _render_document_result_detail(chosen=chosen, selection_key=f"doc_{sel_idx}")
+                    chosen_text = ""
+                    if isinstance(source_texts, list):
+                        if isinstance(raw_index, int) and 0 <= raw_index < len(source_texts):
+                            chosen_text = str(source_texts[raw_index] or "")
+                        elif 0 <= sel_idx < len(source_texts):
+                            chosen_text = str(source_texts[sel_idx] or "")
+                    _render_document_result_detail(
+                        chosen=chosen,
+                        selection_key=f"doc_{sel_idx}",
+                        source_text=chosen_text,
+                    )
             elif rows:
                 st.info("No hay documentos que coincidan con el filtro seleccionado.")
 

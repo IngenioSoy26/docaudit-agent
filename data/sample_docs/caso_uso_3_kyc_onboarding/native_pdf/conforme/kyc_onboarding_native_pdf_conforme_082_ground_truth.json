@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Fabiana",
+  "primer_apellido": "Vives",
+  "segundo_apellido": "Carro",
+  "num_documento": "29277748H",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "1980-02-22",
+  "fecha_expedicion": "2023-07-18",
+  "fecha_caducidad": "2028-12-22",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Cañada Ramón Catalán 54, Zaragoza, 19014",
+  "actividad_economica": "Profesional por cuenta ajena",
+  "proposito_relacion": "Apertura de cuenta y verificacion de identidad",
+  "pep": false,
+  "titular_real_identificado": true,
+  "coincidencia_sanciones": false,
+  "nivel_riesgo": "bajo"
+}

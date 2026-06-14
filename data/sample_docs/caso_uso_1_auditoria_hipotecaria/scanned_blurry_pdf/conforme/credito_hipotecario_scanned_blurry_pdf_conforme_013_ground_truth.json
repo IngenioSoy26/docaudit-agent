@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0003",
+  "nombre_cliente": "Diego Gisbert Pujol",
+  "dni_cliente": "81208089W",
+  "monto_prestamo_eur": 324916.32,
+  "tasa_interes": 5.49,
+  "tae": 6.51,
+  "plazo_meses": 276,
+  "cuota_mensual_eur": 1346.08,
+  "ingresos_mensuales_eur": 4641.66,
+  "gastos_mensuales_eur": 815,
+  "ratio_endeudamiento": 0.39,
+  "comision_apertura_eur": 1462.12,
+  "fein_entregada": true,
+  "fiae_entregada": true,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2022-07-11"
+}

@@ -56,3 +56,10 @@ def test_infer_tipo_documento_from_numero_documento():
     extracted = {"fecha_nacimiento": "08/12/1992"}
     result = normalize_extracted(extracted, schema)
     assert result["normalized"]["fecha_nacimiento"] == "1992-12-08"
+
+
+def test_normalize_ocr_broken_money_format_in_hipotecario():
+    schema = load_schema("schemas/credito_hipotecario.yaml")
+    extracted = {"ingresos_mensuales_eur": "4,160,00"}
+    result = normalize_extracted(extracted, schema)
+    assert result["normalized"]["ingresos_mensuales_eur"] == 4160.00

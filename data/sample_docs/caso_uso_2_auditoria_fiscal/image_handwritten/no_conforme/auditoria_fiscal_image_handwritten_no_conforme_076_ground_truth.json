@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Compañía Guitart S.Com.",
+  "direccion_emisor": "Avenida Revision Fiscal 86, Valencia",
+  "nif_emisor": "A3024932C",
+  "nombre_destinatario": "Cliente Riesgo 06 S.L.",
+  "nif_destinatario": "B7100006L",
+  "num_factura": "",
+  "serie_factura": "SER-X",
+  "fecha_expedicion": "2026-07-13",
+  "fecha_operacion": "2026-07-17",
+  "descripcion_operacion": "Servicios con incidencia de control fiscal 06",
+  "base_imponible": 4197.94,
+  "tipo_iva": 15,
+  "cuota_iva": 503.75,
+  "retencion_irpf": null,
+  "importe_total": 4747.19
+}

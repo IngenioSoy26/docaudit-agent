@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Nicanor",
+  "primer_apellido": "Roselló",
+  "segundo_apellido": "Ferreras",
+  "num_documento": "49854296F",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "2005-03-08",
+  "fecha_expedicion": "2023-04-19",
+  "fecha_caducidad": "2029-01-27",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Camino de Rosalía Gálvez 33, Pontevedra, 38366",
+  "actividad_economica": "Profesional por cuenta ajena",
+  "proposito_relacion": "Apertura de cuenta y verificacion de identidad",
+  "pep": false,
+  "titular_real_identificado": true,
+  "coincidencia_sanciones": false,
+  "nivel_riesgo": "bajo"
+}

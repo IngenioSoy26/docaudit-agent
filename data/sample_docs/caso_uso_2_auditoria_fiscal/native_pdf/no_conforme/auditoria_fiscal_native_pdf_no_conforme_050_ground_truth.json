@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Uriarte & Asociados S.L.",
+  "direccion_emisor": "Avenida Revision Fiscal 90, Valencia",
+  "nif_emisor": "B2005233A",
+  "nombre_destinatario": "Cliente Riesgo 10 S.L.",
+  "nif_destinatario": "B7100010P",
+  "num_factura": "",
+  "serie_factura": "SER-X",
+  "fecha_expedicion": "2026-07-17",
+  "fecha_operacion": "2026-07-21",
+  "descripcion_operacion": "Servicios con incidencia de control fiscal 10",
+  "base_imponible": 3982.5,
+  "tipo_iva": 15,
+  "cuota_iva": 477.9,
+  "retencion_irpf": null,
+  "importe_total": 4505.9
+}

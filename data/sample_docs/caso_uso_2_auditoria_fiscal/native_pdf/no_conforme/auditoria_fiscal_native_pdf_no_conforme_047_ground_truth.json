@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Noguera y Tena S.L.",
+  "direccion_emisor": "Avenida Revision Fiscal 87, Valencia",
+  "nif_emisor": "F7081132B",
+  "nombre_destinatario": "Cliente Riesgo 07 S.L.",
+  "nif_destinatario": "B7100007M",
+  "num_factura": "",
+  "serie_factura": "SER-X",
+  "fecha_expedicion": "2026-07-14",
+  "fecha_operacion": "2026-07-18",
+  "descripcion_operacion": "Servicios con incidencia de control fiscal 07",
+  "base_imponible": 4867.85,
+  "tipo_iva": 15,
+  "cuota_iva": 584.14,
+  "retencion_irpf": null,
+  "importe_total": 5497.49
+}

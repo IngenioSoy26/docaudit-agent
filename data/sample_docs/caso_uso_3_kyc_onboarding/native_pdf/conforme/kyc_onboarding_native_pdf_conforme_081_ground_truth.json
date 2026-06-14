@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Marcia",
+  "primer_apellido": "Osorio",
+  "segundo_apellido": "Mariño",
+  "num_documento": "53864817D",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "1992-12-08",
+  "fecha_expedicion": "2023-08-17",
+  "fecha_caducidad": "2028-12-10",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Ronda de Carmela Talavera 59, Salamanca, 31989",
+  "actividad_economica": "Profesional por cuenta ajena",
+  "proposito_relacion": "Apertura de cuenta y verificacion de identidad",
+  "pep": false,
+  "titular_real_identificado": true,
+  "coincidencia_sanciones": false,
+  "nivel_riesgo": "bajo"
+}

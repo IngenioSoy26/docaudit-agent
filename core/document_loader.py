@@ -40,6 +40,7 @@ def _score_ocr_candidate(text: str, confidences: list[float] | None = None) -> f
 def _easyocr_best_text(image_bytes: bytes, reader: Any | None = None) -> str:
     """Ejecuta EasyOCR probando varias orientaciones y devuelve la mejor lectura."""
     import easyocr
+    import numpy as np
     from PIL import Image, ImageOps
 
     if reader is None:
@@ -51,7 +52,7 @@ def _easyocr_best_text(image_bytes: bytes, reader: Any | None = None) -> str:
     for angle in (0, 90, 180, 270):
         rotated = base_img.rotate(angle, expand=True) if angle else base_img.copy()
         prepared = ImageOps.autocontrast(ImageOps.grayscale(rotated))
-        results = reader.readtext(prepared, detail=1)
+        results = reader.readtext(np.array(prepared), detail=1)
         texts = [str(item[1]).strip() for item in results if len(item) >= 2 and str(item[1]).strip()]
         confidences = [float(item[2]) for item in results if len(item) >= 3 and isinstance(item[2], (int, float))]
         page_text = "\n".join(texts).strip()

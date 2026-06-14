@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Crescencia",
+  "primer_apellido": "Casas",
+  "segundo_apellido": "Peinado",
+  "num_documento": "58592696A",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "2010-04-14",
+  "fecha_expedicion": "2026-07-01",
+  "fecha_caducidad": "2026-04-24",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Avenida Joel Gibert 51, Albacete, 41326",
+  "actividad_economica": "Actividad no verificada",
+  "proposito_relacion": "",
+  "pep": true,
+  "titular_real_identificado": false,
+  "coincidencia_sanciones": true,
+  "nivel_riesgo": "bajo"
+}

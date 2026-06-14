@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Infraestructuras SUMO S.L.L.",
+  "direccion_emisor": "Calle Control Interno 43, Madrid",
+  "nif_emisor": "B7190948C",
+  "nombre_destinatario": "Cliente Auditoria 03 S.L.",
+  "nif_destinatario": "B7000003D",
+  "num_factura": "FAC-2026-0003",
+  "serie_factura": "SER-A",
+  "fecha_expedicion": "2025-10-02",
+  "fecha_operacion": "2025-09-30",
+  "descripcion_operacion": "Servicios profesionales de auditoria documental lote 03",
+  "base_imponible": 617.83,
+  "tipo_iva": 21,
+  "cuota_iva": 129.74,
+  "retencion_irpf": null,
+  "importe_total": 747.57
+}

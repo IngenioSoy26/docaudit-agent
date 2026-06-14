@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0001",
+  "nombre_cliente": "Armida Falcón Trillo",
+  "dni_cliente": "86473212N",
+  "monto_prestamo_eur": 157520.6,
+  "tasa_interes": 3.6,
+  "tae": 4.44,
+  "plazo_meses": 252,
+  "cuota_mensual_eur": 762.6,
+  "ingresos_mensuales_eur": 3590,
+  "gastos_mensuales_eur": 705,
+  "ratio_endeudamiento": 0.39,
+  "comision_apertura_eur": 708.84,
+  "fein_entregada": true,
+  "fiae_entregada": true,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2025-03-08"
+}

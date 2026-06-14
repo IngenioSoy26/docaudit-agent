@@ -1,0 +1,19 @@
+{
+  "nombre_titular": "Graciana",
+  "primer_apellido": "Batalla",
+  "segundo_apellido": "Sala",
+  "num_documento": "62777355R",
+  "nacionalidad": "Espana",
+  "pais_residencia": "Espana",
+  "fecha_nacimiento": "2010-04-21",
+  "fecha_expedicion": "2026-06-30",
+  "fecha_caducidad": "2026-04-25",
+  "autoridad_emisora": "Direccion General de la Policia",
+  "domicilio_comprobante": "Rambla de Amaro Céspedes 52 Piso 4 , Asturias, 44378",
+  "actividad_economica": "Actividad no verificada",
+  "proposito_relacion": "",
+  "pep": true,
+  "titular_real_identificado": false,
+  "coincidencia_sanciones": true,
+  "nivel_riesgo": "bajo"
+}

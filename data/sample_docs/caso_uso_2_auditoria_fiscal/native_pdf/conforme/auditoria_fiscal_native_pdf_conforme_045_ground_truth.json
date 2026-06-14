@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Alimentación del Sur S.Coop.",
+  "direccion_emisor": "Calle Control Interno 45, Madrid",
+  "nif_emisor": "F6395372C",
+  "nombre_destinatario": "Cliente Auditoria 05 S.L.",
+  "nif_destinatario": "B7000005F",
+  "num_factura": "FAC-2026-0005",
+  "serie_factura": "SER-A",
+  "fecha_expedicion": "2025-11-16",
+  "fecha_operacion": "2025-11-14",
+  "descripcion_operacion": "Servicios profesionales de auditoria documental lote 05",
+  "base_imponible": 1184.04,
+  "tipo_iva": 4,
+  "cuota_iva": 47.36,
+  "retencion_irpf": null,
+  "importe_total": 1231.4
+}

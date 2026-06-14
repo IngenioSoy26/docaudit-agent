@@ -74,10 +74,56 @@ def _parse_number_str(raw: str) -> float | None:
     )
     s = re.sub(r"[^0-9,.\-+]", "", lower)
 
+    # Limpia secuencias OCR anómalas como "3,.590,00" antes de decidir separadores.
+    s = re.sub(r"(?<=\d)[,\.](?=[,\.])", "", s)
+
     if re.fullmatch(r"[-+]?\d+([.,]\d+)?", s) is None and re.fullmatch(
         r"[-+]?\d{1,3}([.,]\d{3})+([.,]\d+)?", s
     ) is None:
+        # Soporta formatos con múltiples separadores erráticos como "4,160,00" o "5,603,25".
+        separators = [idx for idx, ch in enumerate(s) if ch in ",."]
+        if not separators:
+            return None
+        last_sep_idx = separators[-1]
+        fractional = s[last_sep_idx + 1 :]
+        integer = s[:last_sep_idx]
+
+        if fractional.isdigit() and 1 <= len(fractional) <= 2:
+            sign = ""
+            if integer[:1] in {"+", "-"}:
+                sign = integer[:1]
+                integer = integer[1:]
+            integer_digits = re.sub(r"[,.]", "", integer)
+            if integer_digits.isdigit():
+                try:
+                    return float(f"{sign}{integer_digits}.{fractional}")
+                except ValueError:
+                    return None
         return None
+
+    separators = [idx for idx, ch in enumerate(s) if ch in ",."]
+    if len(separators) > 1:
+        last_sep_idx = separators[-1]
+        fractional = s[last_sep_idx + 1 :]
+        integer = s[:last_sep_idx]
+        sign = ""
+        if integer[:1] in {"+", "-"}:
+            sign = integer[:1]
+            integer = integer[1:]
+
+        if fractional.isdigit() and 1 <= len(fractional) <= 2:
+            integer_digits = re.sub(r"[,.]", "", integer)
+            if integer_digits.isdigit():
+                try:
+                    return float(f"{sign}{integer_digits}.{fractional}")
+                except ValueError:
+                    return None
+
+        compact = f"{sign}{re.sub(r'[,.]', '', integer)}{fractional}"
+        try:
+            return float(compact)
+        except ValueError:
+            return None
 
     has_dot = "." in s
     has_comma = "," in s

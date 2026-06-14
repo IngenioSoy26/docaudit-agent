@@ -1,0 +1,18 @@
+{
+  "id_documento": "HIP-0002",
+  "nombre_cliente": "Demetrio Guardia Coll",
+  "dni_cliente": "22073473S",
+  "monto_prestamo_eur": 392227.42,
+  "tasa_interes": 4.98,
+  "tae": 5.91,
+  "plazo_meses": 264,
+  "cuota_mensual_eur": 1624.94,
+  "ingresos_mensuales_eur": 5603.25,
+  "gastos_mensuales_eur": 760,
+  "ratio_endeudamiento": 0.39,
+  "comision_apertura_eur": 1765.02,
+  "fein_entregada": true,
+  "fiae_entregada": true,
+  "sistema_amortizacion": "frances",
+  "fecha_emision": "2020-09-18"
+}

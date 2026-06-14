@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Julia Mesa Pavón S.L.",
+  "direccion_emisor": "Calle Control Interno 41, Madrid",
+  "nif_emisor": "A2418382A",
+  "nombre_destinatario": "Cliente Auditoria 01 S.L.",
+  "nif_destinatario": "B7000001B",
+  "num_factura": "FAC-2026-0001",
+  "serie_factura": "SER-A",
+  "fecha_expedicion": "2026-03-25",
+  "fecha_operacion": "2026-03-23",
+  "descripcion_operacion": "Servicios profesionales de auditoria documental lote 01",
+  "base_imponible": 2445.37,
+  "tipo_iva": 4,
+  "cuota_iva": 97.81,
+  "retencion_irpf": null,
+  "importe_total": 2543.18
+}

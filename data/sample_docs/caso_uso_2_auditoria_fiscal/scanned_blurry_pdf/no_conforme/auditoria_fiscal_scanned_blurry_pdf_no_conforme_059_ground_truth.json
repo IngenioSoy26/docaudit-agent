@@ -1,0 +1,17 @@
+{
+  "razon_social_emisor": "Talleres Barco S.Coop.",
+  "direccion_emisor": "Avenida Revision Fiscal 89, Valencia",
+  "nif_emisor": "B4639430D",
+  "nombre_destinatario": "Cliente Riesgo 09 S.L.",
+  "nif_destinatario": "B7100009O",
+  "num_factura": "",
+  "serie_factura": "SER-X",
+  "fecha_expedicion": "2026-07-16",
+  "fecha_operacion": "2026-07-20",
+  "descripcion_operacion": "Servicios con incidencia de control fiscal 09",
+  "base_imponible": 3361.57,
+  "tipo_iva": 15,
+  "cuota_iva": 403.39,
+  "retencion_irpf": null,
+  "importe_total": 3810.46
+}
