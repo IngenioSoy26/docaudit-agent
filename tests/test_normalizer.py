@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.normalizer import normalize_extracted
+from core.normalizer import _parse_number_str, normalize_extracted
 from core.schema_loader import load_schema
 
 
@@ -63,3 +63,51 @@ def test_normalize_ocr_broken_money_format_in_hipotecario():
     extracted = {"ingresos_mensuales_eur": "4,160,00"}
     result = normalize_extracted(extracted, schema)
     assert result["normalized"]["ingresos_mensuales_eur"] == 4160.00
+
+
+def test_reconcile_scaled_rate_and_tae_in_hipotecario():
+    schema = load_schema("schemas/credito_hipotecario.yaml")
+    extracted = {
+        "tasa_interes": 360.0,
+        "tae": 444.0,
+    }
+    result = normalize_extracted(extracted, schema)
+    normalized = result["normalized"]
+    assert normalized["tasa_interes"] == 3.6
+    assert normalized["tae"] == 4.44
+
+
+def test_reconcile_joint_monto_and_cuota_in_hipotecario():
+    schema = load_schema("schemas/credito_hipotecario.yaml")
+    extracted = {
+        "monto_prestamo_eur": 157.52,
+        "tasa_interes": 360.0,
+        "plazo_meses": 252,
+        "cuota_mensual_eur": 78260.0,
+        "ingresos_mensuales_eur": 3590.0,
+        "fecha_emision": "08/03/2025",
+        "nombre_cliente": "Armida Falcon Trillo",
+        "dni_cliente": "86473212N",
+    }
+    result = normalize_extracted(extracted, schema)
+    normalized = result["normalized"]
+    assert normalized["tasa_interes"] == 3.6
+    assert normalized["monto_prestamo_eur"] == 157520.0
+    assert normalized["cuota_mensual_eur"] == 782.6
+
+
+def test_parse_number_str_repairs_internal_ocr_digit_confusions():
+    assert _parse_number_str("7E2.60 EUR") == 762.6
+    assert _parse_number_str("G705.00U") == 705.0
+
+
+def test_reconcile_tasa_interes_when_small_amount_is_actually_rate():
+    schema = load_schema("schemas/credito_hipotecario.yaml")
+    extracted = {
+        "monto_prestamo_eur": 3.6,
+        "tasa_interes": "TAELAES",
+    }
+    result = normalize_extracted(extracted, schema)
+    normalized = result["normalized"]
+    assert normalized["tasa_interes"] == 3.6
+    assert normalized["monto_prestamo_eur"] is None

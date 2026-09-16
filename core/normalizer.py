@@ -64,6 +64,33 @@ def _parse_number_str(raw: str) -> float | None:
     s = raw.strip()
     s = s.replace("€", "").replace("$", "")
     s = re.sub(r"\s+", "", s)
+
+    # Corrige confusiones OCR solo en posiciones internas claramente numéricas
+    # (p. ej. "7E2.60" -> "762.60") sin reinterpretar prefijos textuales.
+    ocr_digit_map = str.maketrans({
+        "o": "0",
+        "O": "0",
+        "q": "0",
+        "Q": "0",
+        "i": "1",
+        "I": "1",
+        "l": "1",
+        "L": "1",
+        "z": "2",
+        "Z": "2",
+        "s": "5",
+        "S": "5",
+        "b": "8",
+        "B": "8",
+        "e": "6",
+        "E": "6",
+    })
+    s = re.sub(
+        r"(?<=\d)[A-Za-z](?=[\d,.\-+])",
+        lambda match: match.group(0).translate(ocr_digit_map),
+        s,
+    )
+
     lower = s.lower()
     lower = (
         lower.replace("eur", "")
@@ -237,6 +264,152 @@ def _is_number(value: Any) -> bool:
 
 def _round_money(value: float) -> float:
     return round(float(value), 2)
+
+
+def _safe_round(value: float, digits: int) -> float:
+    return round(float(value), digits)
+
+
+def _scaled_number_candidates(
+    raw_value: Any,
+    *,
+    max_power: int = 4,
+    digits: int = 4,
+) -> list[tuple[float, int]]:
+    """Genera candidatos reescalando números OCR/LLM por potencias de 10."""
+    seeds: list[float] = []
+
+    if _is_number(raw_value):
+        seeds.append(float(raw_value))
+    elif isinstance(raw_value, str):
+        parsed = _parse_number_str(raw_value)
+        if parsed is not None:
+            seeds.append(parsed)
+        compact_digits = re.sub(r"\D", "", raw_value)
+        if compact_digits:
+            seeds.append(float(int(compact_digits)))
+
+    candidates: list[tuple[float, int]] = []
+    seen: set[float] = set()
+    for seed in seeds:
+        for power in range(0, max_power + 1):
+            factor = 10**power
+            scaled_down = _safe_round(seed / factor, digits)
+            if scaled_down not in seen:
+                seen.add(scaled_down)
+                candidates.append((scaled_down, power))
+            if power == 0:
+                continue
+            scaled_up = _safe_round(seed * factor, digits)
+            if scaled_up not in seen:
+                seen.add(scaled_up)
+                candidates.append((scaled_up, power))
+    return candidates
+
+
+def _estimate_monthly_payment(
+    principal: float | None,
+    annual_rate_pct: float | None,
+    months: int | None,
+) -> float | None:
+    """Estima la cuota mensual con la fórmula de amortización francesa."""
+    if principal is None or annual_rate_pct is None or months is None:
+        return None
+    if principal <= 0 or months <= 0 or annual_rate_pct < 0:
+        return None
+
+    monthly_rate = (annual_rate_pct / 100.0) / 12.0
+    if monthly_rate == 0:
+        return principal / months
+
+    try:
+        denominator = 1.0 - (1.0 + monthly_rate) ** (-months)
+    except OverflowError:
+        return None
+
+    if denominator == 0:
+        return None
+    return principal * monthly_rate / denominator
+
+
+def _score_candidate_against_target(
+    candidate: float,
+    *,
+    shift: int,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    target: float | None = None,
+) -> float:
+    """Puntúa un candidato priorizando rango válido, cercanía a objetivo y pocos reescalados."""
+    score = float(shift)
+
+    if min_value is not None and candidate < min_value:
+        score += 100.0 + (min_value - candidate) / max(abs(min_value), 1.0)
+    if max_value is not None and candidate > max_value:
+        score += 100.0 + (candidate - max_value) / max(abs(max_value), 1.0)
+    if target is not None:
+        score += abs(candidate - target) / max(abs(target), 1.0) * 8.0
+
+    return score
+
+
+def _reconcile_scaled_numeric_field(
+    *,
+    field_name: str,
+    extracted: dict[str, Any],
+    normalized: dict[str, Any],
+    min_value: float | None = None,
+    max_value: float | None = None,
+    digits: int = 4,
+    target: float | None = None,
+) -> list[NormalizationChange]:
+    """Corrige campos numéricos cuando el OCR/LLM desplaza el punto decimal."""
+    current = normalized.get(field_name)
+    current_num = float(current) if _is_number(current) else None
+
+    if current_num is not None:
+        in_min = min_value is None or current_num >= min_value
+        in_max = max_value is None or current_num <= max_value
+        if in_min and in_max:
+            return []
+
+    raw_value = extracted.get(field_name, current)
+    candidates = _scaled_number_candidates(raw_value, digits=digits)
+    if not candidates:
+        return []
+
+    current_score = (
+        _score_candidate_against_target(
+            current_num,
+            shift=0,
+            min_value=min_value,
+            max_value=max_value,
+            target=target,
+        )
+        if current_num is not None
+        else float("inf")
+    )
+
+    best_candidate: float | None = None
+    best_score = current_score
+    for candidate, shift in candidates:
+        score = _score_candidate_against_target(
+            candidate,
+            shift=shift,
+            min_value=min_value,
+            max_value=max_value,
+            target=target,
+        )
+        if score < best_score:
+            best_candidate = candidate
+            best_score = score
+
+    if best_candidate is None:
+        return []
+
+    before = current
+    normalized[field_name] = int(round(best_candidate)) if digits == 0 else _safe_round(best_candidate, digits)
+    return [NormalizationChange(field=field_name, kind="reconcile", before=before, after=normalized[field_name])]
 
 
 def _money_candidates_from_ocr(raw_value: Any) -> list[float]:
@@ -433,6 +606,193 @@ def _reconcile_auditoria_fiscal(
     return changes
 
 
+def _reconcile_credito_hipotecario(
+    *,
+    extracted: dict[str, Any],
+    normalized: dict[str, Any],
+    schema: DocSchema,
+) -> list[NormalizationChange]:
+    """Corrige reescalados OCR frecuentes en préstamo hipotecario."""
+    if schema.name != "credito_hipotecario":
+        return []
+
+    changes: list[NormalizationChange] = []
+
+    changes.extend(
+        _reconcile_scaled_numeric_field(
+            field_name="tasa_interes",
+            extracted=extracted,
+            normalized=normalized,
+            min_value=0.0,
+            max_value=20.0,
+            digits=4,
+        )
+    )
+
+    tasa_interes = normalized.get("tasa_interes")
+    monto_actual = normalized.get("monto_prestamo_eur")
+    if not _is_number(tasa_interes) and _is_number(monto_actual):
+        monto_float = float(monto_actual)
+        if 0.0 < monto_float <= 20.0:
+            normalized["tasa_interes"] = _safe_round(monto_float, 4)
+            normalized["monto_prestamo_eur"] = None
+            changes.append(
+                NormalizationChange(
+                    field="tasa_interes",
+                    kind="reconcile",
+                    before=tasa_interes,
+                    after=normalized["tasa_interes"],
+                )
+            )
+            changes.append(
+                NormalizationChange(
+                    field="monto_prestamo_eur",
+                    kind="reconcile",
+                    before=monto_actual,
+                    after=None,
+                )
+            )
+
+    tasa_interes = normalized.get("tasa_interes")
+    tasa_target = float(tasa_interes) if _is_number(tasa_interes) else None
+    changes.extend(
+        _reconcile_scaled_numeric_field(
+            field_name="tae",
+            extracted=extracted,
+            normalized=normalized,
+            min_value=tasa_target if tasa_target is not None else 0.0,
+            max_value=25.0,
+            digits=4,
+        )
+    )
+
+    changes.extend(
+        _reconcile_scaled_numeric_field(
+            field_name="plazo_meses",
+            extracted=extracted,
+            normalized=normalized,
+            min_value=1.0,
+            max_value=480.0,
+            digits=0,
+        )
+    )
+
+    for field_name, min_value, max_value in [
+        ("ingresos_mensuales_eur", 300.0, 100000.0),
+        ("gastos_mensuales_eur", 0.0, 50000.0),
+        ("comision_apertura_eur", 0.0, 50000.0),
+        ("ratio_endeudamiento", 0.0, 1.0),
+    ]:
+        changes.extend(
+            _reconcile_scaled_numeric_field(
+                field_name=field_name,
+                extracted=extracted,
+                normalized=normalized,
+                min_value=min_value,
+                max_value=max_value,
+                digits=2 if field_name.endswith("_eur") or field_name == "ratio_endeudamiento" else 4,
+            )
+        )
+
+    rate = float(normalized["tasa_interes"]) if _is_number(normalized.get("tasa_interes")) else None
+    months = int(normalized["plazo_meses"]) if _is_number(normalized.get("plazo_meses")) else None
+    income = float(normalized["ingresos_mensuales_eur"]) if _is_number(normalized.get("ingresos_mensuales_eur")) else None
+
+    raw_amount = extracted.get("monto_prestamo_eur", normalized.get("monto_prestamo_eur"))
+    raw_payment = extracted.get("cuota_mensual_eur", normalized.get("cuota_mensual_eur"))
+    amount_candidates = _scaled_number_candidates(raw_amount, digits=2)
+    payment_candidates = _scaled_number_candidates(raw_payment, digits=2)
+
+    current_amount = float(normalized["monto_prestamo_eur"]) if _is_number(normalized.get("monto_prestamo_eur")) else None
+    current_payment = float(normalized["cuota_mensual_eur"]) if _is_number(normalized.get("cuota_mensual_eur")) else None
+
+    def _pair_score(amount: float | None, payment: float | None, *, amount_shift: int = 0, payment_shift: int = 0) -> float:
+        score = 0.0
+        if amount is None:
+            score += 250.0
+        else:
+            score += amount_shift
+            if amount <= 0:
+                score += 500.0
+            elif amount < 10000.0:
+                score += 60.0 + (10000.0 - amount) / 1000.0
+        if payment is None:
+            score += 50.0
+        else:
+            score += payment_shift
+            if payment <= 0:
+                score += 500.0
+            elif payment < 100.0:
+                score += 40.0 + (100.0 - payment) / 10.0
+
+        if amount is not None and payment is not None and months is not None:
+            total_paid = payment * months
+            if total_paid < amount * 0.95:
+                score += 200.0 + (amount * 0.95 - total_paid) / max(amount, 1.0) * 20.0
+            if total_paid > amount * 4.5:
+                score += 30.0 + (total_paid - amount * 4.5) / max(amount, 1.0) * 5.0
+
+        if amount is not None and payment is not None and rate is not None and months is not None:
+            expected_payment = _estimate_monthly_payment(amount, rate, months)
+            if expected_payment is not None:
+                score += abs(payment - expected_payment) / max(expected_payment, 1.0) * 10.0
+
+        if payment is not None and income is not None and income > 0:
+            ratio = payment / income
+            if ratio > 0.8:
+                score += 40.0 + (ratio - 0.8) * 20.0
+
+        return score
+
+    current_pair_score = _pair_score(current_amount, current_payment)
+    best_pair: tuple[float, float] | None = None
+    best_pair_score = current_pair_score
+
+    can_reconcile_amount_payment = months is not None and (rate is not None or income is not None)
+
+    if can_reconcile_amount_payment and amount_candidates and payment_candidates:
+        for amount_candidate, amount_shift in amount_candidates:
+            if amount_candidate <= 0:
+                continue
+            for payment_candidate, payment_shift in payment_candidates:
+                if payment_candidate <= 0:
+                    continue
+                score = _pair_score(
+                    amount_candidate,
+                    payment_candidate,
+                    amount_shift=amount_shift,
+                    payment_shift=payment_shift,
+                )
+                if score < best_pair_score:
+                    best_pair = (amount_candidate, payment_candidate)
+                    best_pair_score = score
+
+    if best_pair is not None:
+        best_amount, best_payment = best_pair
+        if current_amount is None or abs(best_amount - current_amount) > 0.01:
+            normalized["monto_prestamo_eur"] = _round_money(best_amount)
+            changes.append(
+                NormalizationChange(
+                    field="monto_prestamo_eur",
+                    kind="reconcile",
+                    before=current_amount,
+                    after=normalized["monto_prestamo_eur"],
+                )
+            )
+        if current_payment is None or abs(best_payment - current_payment) > 0.01:
+            normalized["cuota_mensual_eur"] = _round_money(best_payment)
+            changes.append(
+                NormalizationChange(
+                    field="cuota_mensual_eur",
+                    kind="reconcile",
+                    before=current_payment,
+                    after=normalized["cuota_mensual_eur"],
+                )
+            )
+
+    return changes
+
+
 def _normalize_field(field: SchemaField, value: Any) -> tuple[Any, list[NormalizationChange]]:
     """Normaliza un campo según su tipo declarado y reglas (incluyendo enum si aplica)."""
     changes: list[NormalizationChange] = []
@@ -533,6 +893,7 @@ def normalize_extracted(extracted: dict[str, Any], schema: DocSchema) -> dict[st
                 normalized["tipo_documento"] = inferred
 
     changes.extend(_reconcile_auditoria_fiscal(extracted=extracted, normalized=normalized, schema=schema))
+    changes.extend(_reconcile_credito_hipotecario(extracted=extracted, normalized=normalized, schema=schema))
 
     autocorrections = [
         {"field": c.field, "kind": c.kind, "before": c.before, "after": c.after}

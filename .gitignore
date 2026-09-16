@@ -1,30 +1,70 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-venv/
+# ===== Entornos virtuales Python =====
 .venv/
-.venv*/
+.venv_ocr/
+.venv_clean/
+.venv-ocr/
+venv/
+venv_*/
+.venv_*/
+.venv-*/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ===== Variables de entorno y datos locales =====
 .env
+.env.*
+.venv.bak/
 .chroma/
-reports/
-reporte_evaluacion.md
-test_data/execution_logs/
+--output-json
+--output-json/
+*.db
+*.sqlite
+*.sqlite3
 
-# Jupyter Notebooks
-.ipynb_checkpoints
-
-# OS
+# ===== Sistema =====
 .DS_Store
 Thumbs.db
+*.log
 
-# Data
-# Se versiona el corpus de prueba anonimizado bajo data/sample_docs/ según la propuesta técnica.
+# ===== Archivos TEMPORALES DE DESARROLLO (NO versionar) =====
+_tmp_*.py
+_tmp_*_*.py
+_tmp_*.txt
+debug_*.py
+*_slice.py
+*_slice2.py
+*_slice3.py
+_make_payload*.py
+_ocr_check.txt
+--output-json/
+_run_deps/
+
+# ===== Outputs de evaluación, logs de ejecución y figuras temporales (REPRODUCIBLES) =====
+reports/*/
+reports/*.csv
+reports/*.json
+reports/*.pdf
+test_data/execution_logs/
 temp_plots/
-test_data/experimentos_120/
-test_data/experimentos_120_high_validity/
-test_data/experiment_manifest_120_spain*.json
+*.csv.bak
+*.json.bak
 
-# Scripts locales
-*.bat
+# ===== PDFs binarios del corpus (reproducibles con build_high_validity_experiment.py) =====
+data/sample_docs/**/*.pdf
 
+# ===== Tools auxiliares SOLO para generación de documento TFM en Word (NO reproducibilidad del agente) =====
+tools/_generate_guia_word_docx.py
+tools/_md_to_docx_final.py
+tools/_inspect_plantilla_tfm_headings.py
+tools/_extract_tfm_data_v2.py
+tools/_tfm_data_c1_desagregado.py
+
+# ===== Plantillas Word locales (no pertenecen al repo del agente) =====
+Plantilla_*.docx
+GUIA_*.docx

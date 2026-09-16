@@ -136,23 +136,35 @@ def render_confidence_gauge(*, score: float | None, key: str | None = None) -> N
         except TypeError:
             st.progress(int(max(0.0, min(1.0, float(score))) * 100))
         return
+    score_value = float(max(0.0, min(1.0, float(score)))) * 100.0
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number",
-            value=float(score) * 100.0,
-            number={"suffix": "%"},
+            value=score_value,
+            number={"suffix": "%", "font": {"color": "#f8fafc"}},
             gauge={
-                "axis": {"range": [0, 100]},
-                "bar": {"color": "#1f77b4"},
+                "axis": {"range": [0, 100], "ticksuffix": "%", "tickfont": {"color": "#cbd5e1"}},
+                "bar": {"color": "#38bdf8"},
                 "steps": [
-                    {"range": [0, 50], "color": "#f2f2f2"},
-                    {"range": [50, 80], "color": "#e6f2ff"},
-                    {"range": [80, 100], "color": "#d9f2d9"},
+                    {"range": [0, 50], "color": "rgba(239,68,68,0.18)"},
+                    {"range": [50, 80], "color": "rgba(251,191,36,0.18)"},
+                    {"range": [80, 100], "color": "rgba(34,197,94,0.22)"},
                 ],
+                "threshold": {
+                    "line": {"color": "#38bdf8", "width": 3},
+                    "thickness": 0.85,
+                    "value": score_value,
+                },
             },
         )
     )
-    fig.update_layout(height=220, margin={"l": 20, "r": 20, "t": 30, "b": 10})
+    fig.update_layout(
+        height=220,
+        margin={"l": 20, "r": 20, "t": 30, "b": 10},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#f8fafc", "family": "Inter, Segoe UI, sans-serif"},
+    )
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 

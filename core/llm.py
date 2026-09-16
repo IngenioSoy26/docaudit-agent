@@ -6,7 +6,7 @@ Centraliza la creación de modelos para:
 - clasificación
 """
 
-from langchain_ollama import ChatOllama
+from typing import Any
 
 from core.settings import settings
 
@@ -16,8 +16,8 @@ def _get_llm(
     *,
     num_predict: int | None = None,
     format: str | None = None,
-) -> ChatOllama:
-    """Crea un cliente ChatOllama con parámetros comunes (timeout/temperature).
+) -> "_LocalOllamaChat":
+    """Crea un cliente HTTP ligero para Ollama con interfaz `.invoke()`.
 
     Args:
         model: Nombre del modelo en Ollama (p.ej. "llama3.2:3b").
@@ -25,21 +25,43 @@ def _get_llm(
         format: Si se define, fuerza formato (p.ej. "json").
 
     Returns:
-        Instancia de ChatOllama configurada.
+        Cliente compatible con el uso actual del proyecto.
     """
-    return ChatOllama(
-        model=model,
-        base_url=settings.ollama_base_url,
-        temperature=0,
-        num_predict=num_predict,
-        format=format,
-        client_kwargs={"timeout": settings.ollama_timeout_s},
-    )
+    return _LocalOllamaChat(model=model, num_predict=num_predict, format=format)
 
 
 class _SimpleResponse:
     def __init__(self, content: str):
         self.content = content
+
+
+class _LocalOllamaChat:
+    def __init__(self, *, model: str, num_predict: int | None = None, format: str | None = None):
+        self._model = model
+        self._num_predict = num_predict
+        self._format = format
+
+    def invoke(self, prompt: str, stream: bool = False) -> _SimpleResponse:
+        import requests
+
+        url = settings.ollama_base_url.rstrip("/") + "/api/chat"
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "stream": bool(stream),
+            "messages": [{"role": "user", "content": prompt}],
+            "options": {"temperature": 0},
+        }
+        if self._num_predict is not None:
+            payload["options"]["num_predict"] = self._num_predict
+        if self._format:
+            payload["format"] = self._format
+
+        resp = requests.post(url, json=payload, timeout=settings.ollama_timeout_s)
+        resp.raise_for_status()
+        data = resp.json()
+        message = data.get("message") or {}
+        content = message.get("content")
+        return _SimpleResponse(content if isinstance(content, str) else str(content))
 
 
 class _OpenAIChat:
@@ -69,7 +91,7 @@ class _OpenAIChat:
         return _SimpleResponse(content if isinstance(content, str) else str(content))
 
 
-def get_text_llm() -> ChatOllama:
+def get_text_llm() -> _LocalOllamaChat | _OpenAIChat:
     """Devuelve el LLM para extracción de campos (formato JSON)."""
     if (settings.llm_backend or "local").lower() in {"gpt4mini", "gpt-4o-mini"}:
         return _OpenAIChat(model="gpt-4o-mini")  # type: ignore[return-value]
@@ -80,7 +102,7 @@ def get_text_llm() -> ChatOllama:
     )
 
 
-def get_classifier_llm() -> ChatOllama:
+def get_classifier_llm() -> _LocalOllamaChat | _OpenAIChat:
     """Devuelve el LLM para clasificación de caso de uso."""
     if (settings.llm_backend or "local").lower() in {"gpt4mini", "gpt-4o-mini"}:
         return _OpenAIChat(model="gpt-4o-mini")  # type: ignore[return-value]

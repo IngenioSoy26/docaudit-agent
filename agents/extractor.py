@@ -12,17 +12,33 @@ Nota: la ruta de visión/OCR se ejecuta antes del grafo (document_loader) para c
 """
 
 import ast
+import difflib
 import json
+import math
+import os
 import re
 from typing import Any
+from pathlib import Path
 
 from core.llm import get_text_llm
+from core.pattern_extractor import extract_fields_by_schema_patterns
 from core.schema_models import DocSchema
 from core.rag import (
     build_chunks_from_pages,
     build_chunks_from_text,
     retrieve_best_evidence_batch,
 )
+
+
+def _trace_extract(message: str) -> None:
+    trace_path = os.environ.get("DOCAUDIT_EXTRACT_TRACE_PATH", "").strip()
+    if not trace_path:
+        return
+    try:
+        with Path(trace_path).open("a", encoding="utf-8") as fh:
+            fh.write(message + "\n")
+    except Exception:
+        pass
 
 
 def _schema_instructions(schema: DocSchema) -> str:
@@ -139,6 +155,326 @@ def _heuristic_total_gastos_mensuales(text: str) -> float | None:
     if not amounts:
         return None
     return round(sum(amounts), 2)
+
+
+def _ocrish_parse_number(raw: str) -> float | None:
+    token = (raw or "").strip()
+    if not token:
+        return None
+    token = re.sub(r"\s+", "", token)
+    token = re.sub(r"^[^0-9+\-]+(?=\d)", "", token)
+    token = re.sub(r"(?<=\d)[A-Za-z](?=[\d,.\-+])", lambda m: m.group(0).translate(str.maketrans({
+        "O": "0",
+        "o": "0",
+        "Q": "0",
+        "q": "0",
+        "I": "1",
+        "i": "1",
+        "L": "1",
+        "l": "1",
+        "Z": "2",
+        "z": "2",
+        "S": "5",
+        "s": "5",
+        "B": "8",
+        "b": "8",
+        "R": "8",
+        "r": "8",
+        "A": "4",
+        "a": "4",
+        "E": "6",
+        "e": "6",
+    })), token)
+    token = re.sub(r"(?<=\d)[A-Za-z]+$", "", token)
+    return _parse_number_str(token)
+
+
+def _ocrish_parse_compact_money(raw: str) -> float | None:
+    token = str(raw or "")
+    if ":" in token:
+        token = token.split(":", 1)[1]
+    token = token.upper()
+    token = re.sub(r"\s+", "", token)
+    token = re.sub(r"EUR$", "", token)
+    token = re.sub(r"[^0-9A-Z]", "", token)
+    if token.endswith(("E", "S")) and any(ch.isdigit() for ch in token[:-1]):
+        token = token[:-1] + "8"
+    token = token.translate(str.maketrans({
+        "O": "0",
+        "Q": "0",
+        "G": "0",
+        "I": "1",
+        "L": "1",
+        "Z": "2",
+        "R": "8",
+        "S": "8",
+        "B": "8",
+        "E": "6",
+    }))
+    digits = re.sub(r"\D", "", token)
+    if len(digits) < 3:
+        return None
+    return round(int(digits) / 100.0, 2)
+
+
+def _ocrish_parse_percent(raw: str) -> float | None:
+    token = (raw or "").upper()
+    if not any(ch.isdigit() for ch in token):
+        return None
+    chunks = [chunk for chunk in re.findall(r"[0-9A-Z]+", token) if any(ch.isdigit() for ch in chunk) or any(ch in "LAES" for ch in chunk)]
+    if not chunks:
+        return None
+    token = chunks[-1]
+    leading = token[0] if token else ""
+    token = token.translate(str.maketrans({
+        "O": "0",
+        "Q": "0",
+        "I": "1",
+        "L": "1",
+        "Z": "2",
+        "A": "4",
+        "S": "5",
+        "B": "8",
+        "R": "8",
+        "E": "6",
+    }))
+    digits = re.sub(r"\D", "", token)
+    if len(digits) >= 3:
+        if leading in {"L", "I"}:
+            digits = "6" + digits[1:]
+        return round(float(f"{digits[0]}.{digits[1:3]}"), 2)
+    if len(digits) == 2:
+        return round(float(f"{digits[0]}.{digits[1]}"), 2)
+    return _parse_number_str(token)
+
+
+def _extract_dni_from_labeled_line(raw: str) -> str | None:
+    line = str(raw or "").strip().upper()
+    if ":" not in line:
+        return None
+    label, value = line.split(":", 1)
+    compact_label = re.sub(r"[^A-Z]", "", label)
+    if not compact_label.startswith(("DNI", "DNE", "DANE", "DNNE", "DOCUMENTO")):
+        return None
+
+    chunks = [chunk for chunk in re.findall(r"[A-Z0-9]+", value) if any(ch.isdigit() for ch in chunk)]
+    if not chunks:
+        return None
+    token = max(chunks, key=len)
+    token = token.translate(str.maketrans({
+        "O": "0",
+        "Q": "0",
+        "I": "1",
+        "L": "1",
+        "Z": "2",
+    }))
+
+    direct = re.search(r"(\d{8})([A-Z])", token)
+    if direct:
+        return f"{direct.group(1)}{direct.group(2)}"
+
+    trailing_ocr = re.search(r"(\d{8})([0-9A-Z])$", token)
+    if trailing_ocr:
+        tail = trailing_ocr.group(2).translate(str.maketrans({
+            "5": "S",
+            "8": "B",
+            "0": "O",
+            "1": "I",
+            "2": "Z",
+        }))
+        if re.fullmatch(r"[A-Z]", tail):
+            return f"{trailing_ocr.group(1)}{tail}"
+
+    return None
+
+
+def _ocrish_parse_decimal_like(raw: str) -> float | None:
+    line = str(raw or "").strip()
+    value = line.split(":", 1)[1] if ":" in line else line
+    value = re.sub(r"\s+", "", value).upper()
+    m = re.search(r"(\d{1,2})[.,]([0-9A-Z]{1,3})", value)
+    if not m:
+        return None
+    left = m.group(1)
+    right = m.group(2)
+    right = right.translate(
+        str.maketrans(
+            {
+                "O": "0",
+                "Q": "0",
+                "I": "1",
+                "L": "1",
+                "Z": "2",
+                "A": "4",
+                "S": "5",
+                "B": "8",
+                "R": "8",
+                "E": "6",
+            }
+        )
+    )
+    digits = re.sub(r"\D", "", right)
+    if len(digits) == 0:
+        return None
+    if len(digits) == 1:
+        digits = digits + "0"
+    return _parse_number_str(f"{left}.{digits[:2]}")
+
+
+def _infer_principal_from_payment(payment: float, annual_rate_pct: float, months: int) -> float | None:
+    if payment <= 0 or annual_rate_pct < 0 or months <= 0:
+        return None
+    monthly_rate = (annual_rate_pct / 100.0) / 12.0
+    if monthly_rate == 0:
+        return payment * months
+    try:
+        factor = 1.0 - (1.0 + monthly_rate) ** (-months)
+    except OverflowError:
+        return None
+    if factor <= 0:
+        return None
+    return payment * factor / monthly_rate
+
+
+def _looks_like_noisy_credito_ocr(text: str) -> bool:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if len(lines) < 6:
+        return False
+    compact_lines = sum(1 for ln in lines if len(ln.split()) <= 2 and len(ln) >= 6)
+    joined = " ".join(lines).upper()
+    return compact_lines >= 5 or any(marker in joined for marker in ("HP-000", "CU:", "RATO", "FIAE", "FEIN", "TAE"))
+
+
+def _heuristic_credito_hipotecario_noisy_ocr(text: str, schema: DocSchema) -> dict[str, Any]:
+    if schema.name != "credito_hipotecario":
+        return {}
+    if not _looks_like_noisy_credito_ocr(text):
+        return {}
+
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    upper_lines = [ln.upper() for ln in lines]
+    fields = {f.name: None for f in schema.fields}
+
+    for ln, upper in zip(lines, upper_lines):
+        if fields["id_documento"] is None:
+            m = re.search(r"\bH[IP]{1,2}-\d{4}\b", upper)
+            if m:
+                value = m.group(0).replace("HP-", "HIP-").replace("HPP-", "HIP-")
+                fields["id_documento"] = value
+            else:
+                m = re.search(r"H[IP][A-Z0-9]{0,4}(\d)", upper)
+                if m:
+                    fields["id_documento"] = f"HIP-000{m.group(1)}"
+
+        if fields["dni_cliente"] is None:
+            dni = _extract_dni_from_labeled_line(ln)
+            if dni is not None:
+                fields["dni_cliente"] = dni
+
+        if fields["fecha_emision"] is None:
+            m = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", ln)
+            if m:
+                fields["fecha_emision"] = m.group(1)
+            else:
+                m = re.search(r"(20\d{2})(\d{2})-(\d{2})", ln)
+                if m:
+                    fields["fecha_emision"] = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+        if fields["plazo_meses"] is None and ("MES" in upper or upper.startswith(("PA", "PE", "PO"))):
+            candidates = [int(v) for v in re.findall(r"(\d{2,3})", ln)]
+            if candidates:
+                fields["plazo_meses"] = max(candidates)
+
+        if fields["cuota_mensual_eur"] is None and upper.startswith(("CU", "CUO", "CUTA", "CUET")):
+            value = _ocrish_parse_number(ln)
+            if value is not None and value > 10000:
+                value = round(value / 100.0, 2)
+            if value is None or value < 50:
+                value = _ocrish_parse_compact_money(ln)
+            if value is not None and value > 50:
+                fields["cuota_mensual_eur"] = round(value, 2)
+
+        if fields["gastos_mensuales_eur"] is None and (upper.startswith("G") or "GAST" in upper):
+            value = _ocrish_parse_number(ln)
+            if value is not None and value < 100:
+                compact = _ocrish_parse_compact_money(ln)
+                if compact is not None and compact >= 100:
+                    value = compact
+            if value is not None and value >= 0:
+                fields["gastos_mensuales_eur"] = round(value, 2)
+
+        if fields["ratio_endeudamiento"] is None and (
+            upper.startswith(("RAT", "RATO", "RATC"))
+            or "RATIO" in upper
+            or (
+                ":" in ln
+                and len(upper) <= 24
+                and "EUR" not in upper
+                and "%" not in upper
+                and re.search(r"0[.,]\d{1,2}", ln)
+            )
+        ):
+            m = re.search(r"(0[.,]\d{1,2})", ln)
+            if m:
+                ratio = _ocrish_parse_number(m.group(1))
+                if ratio is not None and 0 <= ratio <= 1:
+                    fields["ratio_endeudamiento"] = round(ratio, 2)
+
+        if fields["tasa_interes"] is None and "RAT" not in upper:
+            m = re.search(r"(^|[^0-9])(\d{1,2}[.,]\d{1,2})([^0-9]|$)", ln)
+            if m:
+                candidate = _ocrish_parse_number(m.group(2))
+                if candidate is not None and 1 <= candidate <= 20:
+                    fields["tasa_interes"] = round(candidate, 2)
+            elif "%" in upper and "TAE" not in upper:
+                candidate = _ocrish_parse_percent(ln)
+                if candidate is not None and 0 < candidate <= 20:
+                    fields["tasa_interes"] = round(candidate, 2)
+            elif ":" in ln and len(upper) <= 18 and "TAE" not in upper:
+                candidate = _ocrish_parse_decimal_like(ln)
+                if candidate is not None and 1 <= candidate <= 20:
+                    fields["tasa_interes"] = round(candidate, 2)
+
+        if fields["tae"] is None and "TAE" in upper:
+            value = _ocrish_parse_number(ln)
+            if value is None or value > 25:
+                value = _ocrish_parse_percent(ln)
+            if value is not None and 0 < value <= 25:
+                fields["tae"] = round(value, 2)
+
+        if fields["comision_apertura_eur"] is None and ("EUR" in upper and ":" in ln) and (upper.startswith("CO") or "COM" in upper or "APERT" in upper):
+            value = _ocrish_parse_number(ln)
+            if value is None or value < 100:
+                value = _ocrish_parse_compact_money(ln)
+            if value is not None and value > 0:
+                fields["comision_apertura_eur"] = round(value, 2)
+
+        if fields["monto_prestamo_eur"] is None and ":" in ln and ("MORT" in upper or "HOVT" in upper):
+            value = _ocrish_parse_number(ln)
+            if value is None or value < 10000:
+                value = _ocrish_parse_compact_money(ln)
+            if value is not None and value > 10000:
+                fields["monto_prestamo_eur"] = round(value, 2)
+
+        if fields["fein_entregada"] is None and (re.search(r"F[EA]I[NMWH]", upper) or upper.startswith("FE")):
+            fields["fein_entregada"] = True
+
+        if fields["fiae_entregada"] is None and "FIAE" in upper:
+            fields["fiae_entregada"] = True
+
+        if fields["sistema_amortizacion"] is None and (
+            "SIST" in upper
+            or "ITEMA" in upper
+            or (":" in ln and upper.startswith(("SI", "ST")) and len(upper) <= 24)
+        ):
+            suffix = ln.split(":", 1)[-1].strip() if ":" in ln else ln
+            letters = re.sub(r"[^a-záéíóúñü]", "", suffix.lower())
+            if letters:
+                candidate = difflib.get_close_matches(letters, ["frances"], n=1, cutoff=0.3)
+                if candidate:
+                    fields["sistema_amortizacion"] = candidate[0]
+
+    return fields
 
 
 def _safe_json_parse(text: str) -> Any:
@@ -324,28 +660,60 @@ def extract_from_text(
                 }
                 return {"fields": fields, "details": details}
 
+    prefilled_fields = _heuristic_credito_hipotecario_noisy_ocr(text, schema)
+    pattern_fields, pattern_details = extract_fields_by_schema_patterns(
+        schema=schema,
+        text=text,
+        pages=pages,
+    )
+    for name, value in pattern_fields.items():
+        if prefilled_fields.get(name) is None:
+            prefilled_fields[name] = value
+    prefilled_count = sum(value is not None and value != "" for value in prefilled_fields.values())
+    if prefilled_count >= 5:
+        _trace_extract(f"extract:prefill_only count={prefilled_count}")
+        details = {
+            name: {"nombre": name, "valor": value, "confianza": 0.55 if value is not None else None, "evidencia_textual": "", "pagina": 1}
+            for name, value in prefilled_fields.items()
+        }
+        for name, detail in pattern_details.items():
+            if name in details and isinstance(detail, dict):
+                details[name] = detail
+        return {"fields": prefilled_fields, "details": details}
+
+    _trace_extract(f"extract:start schema={schema.name} text_len={len(text or '')}")
     try:
+        _trace_extract("extract:before_get_llm")
         llm = get_text_llm()
+        _trace_extract("extract:after_get_llm")
         prompt = (
             f"{_schema_instructions(schema)}\n\n"
             "Texto de entrada:\n"
             f"{text}\n"
         )
+        _trace_extract(f"extract:before_invoke prompt_len={len(prompt)}")
         response = llm.invoke(prompt, stream=False)
         raw = response.content if isinstance(response.content, str) else str(response.content)
+        _trace_extract(f"extract:after_invoke raw_len={len(raw)}")
     except Exception:
-        fields = {f.name: None for f in schema.fields}
+        _trace_extract("extract:invoke_failed")
+        fields = prefilled_fields or {f.name: None for f in schema.fields}
         details = {
-            name: {"nombre": name, "valor": None, "confianza": None, "evidencia_textual": "", "pagina": 1}
+            name: {"nombre": name, "valor": fields[name], "confianza": 0.55 if fields[name] is not None else None, "evidencia_textual": "", "pagina": 1}
             for name in fields
         }
+        for name, detail in pattern_details.items():
+            if name in details and isinstance(detail, dict):
+                details[name] = detail
         return {"fields": fields, "details": details}
     allowed = {f.name for f in schema.fields}
     allowed_norm: dict[str, str] = {}
     for name in allowed:
         k = re.sub(r"[^a-z0-9]+", "", name.casefold())
         allowed_norm[k] = name
+    _trace_extract("extract:before_parse")
     parsed = _safe_json_parse(raw)
+    _trace_extract(f"extract:after_parse type={type(parsed).__name__}")
 
     fields: dict[str, Any] = {}
     details: dict[str, Any] = {}
@@ -390,8 +758,19 @@ def extract_from_text(
             key,
             {"nombre": key, "valor": fields[key], "confianza": None, "evidencia_textual": "", "pagina": 1},
         )
+        if fields[key] is None and prefilled_fields.get(key) is not None:
+            fields[key] = prefilled_fields[key]
+            details[key]["valor"] = prefilled_fields[key]
+            if details[key].get("confianza") is None:
+                details[key]["confianza"] = 0.55
+        if fields[key] is None and pattern_fields.get(key) is not None:
+            fields[key] = pattern_fields[key]
+            details[key]["valor"] = pattern_fields[key]
+            if key in pattern_details and isinstance(pattern_details[key], dict):
+                details[key] = pattern_details[key]
 
     try:
+        _trace_extract("extract:before_rag")
         chunks = build_chunks_from_pages(pages) if pages else build_chunks_from_text(text)
         names: list[str] = []
         queries: list[str] = []
@@ -421,6 +800,8 @@ def extract_from_text(
             if isinstance(page, int) and page > 0:
                 details[name]["pagina"] = page
     except Exception:
+        _trace_extract("extract:rag_failed")
         pass
 
+    _trace_extract("extract:done")
     return {"fields": fields, "details": details}

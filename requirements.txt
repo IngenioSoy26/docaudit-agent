@@ -23,6 +23,10 @@ psutil>=5.9.0
 
 # OCR de alto rendimiento para tesis (principal)
 easyocr>=1.7.0
+paddlepaddle>=3.0.0
+paddleocr>=2.8.1
+rapidocr-onnxruntime>=1.4.4
+onnxruntime>=1.23.0
 pillow>=10.0.0
 pymupdf>=1.24.0
 

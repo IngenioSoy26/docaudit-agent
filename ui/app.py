@@ -295,6 +295,103 @@ def _render_document_status_notice(*, status: str, reason: str) -> None:
     st.warning(message)
 
 
+def _rule_badge_html(rule: dict[str, Any]) -> str:
+    """Devuelve un badge HTML con color según severidad y cumplimiento."""
+    cumple = rule.get("cumple")
+    sev = str(rule.get("severidad") or "").lower()
+    if cumple is True:
+        return (
+            '<span style="display:inline-block;padding:0.18rem 0.55rem;border-radius:9999px;'
+            'background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.4);'
+            'color:#bbf7d0;font-size:0.78rem;font-weight:600;">✓ CUMPLE</span>'
+        )
+    if sev == "critica" or sev == "critico":
+        return (
+            '<span style="display:inline-block;padding:0.18rem 0.55rem;border-radius:9999px;'
+            'background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.5);'
+            'color:#fecaca;font-size:0.78rem;font-weight:700;">✗ CRÍTICA</span>'
+        )
+    if sev in {"advertencia", "warning", "media"}:
+        return (
+            '<span style="display:inline-block;padding:0.18rem 0.55rem;border-radius:9999px;'
+            'background:rgba(251,191,36,0.18);border:1px solid rgba(251,191,36,0.5);'
+            'color:#fde68a;font-size:0.78rem;font-weight:600;">⚠ ADVERTENCIA</span>'
+        )
+    return (
+        '<span style="display:inline-block;padding:0.18rem 0.55rem;border-radius:9999px;'
+        'background:rgba(148,163,184,0.15);border:1px solid rgba(148,163,184,0.35);'
+        'color:#e2e8f0;font-size:0.78rem;">ℹ INFORMATIVA</span>'
+    )
+
+
+def _render_decision_rules_cards(*, rules: list[Any]) -> None:
+    """Renderiza las reglas de decisión como tarjetas verticales con badges de color."""
+    normalized = [r for r in (rules or []) if isinstance(r, dict)]
+    if not normalized:
+        st.info("No hay reglas de decisión definidas en este esquema.")
+        return
+
+    n_ok = sum(1 for r in normalized if r.get("cumple") is True)
+    n_total = len(normalized)
+
+    col_totals = st.columns([2, 2, 3, 2])
+    col_totals[0].metric("Reglas evaluadas", str(n_total))
+    col_totals[1].metric("Cumplidas", str(n_ok))
+    col_totals[2].metric(
+        "Ratio cumplimiento",
+        f"{(n_ok / n_total):.0%}" if n_total else "-",
+    )
+    col_totals[3].metric(
+        "Fallidas / advertencia",
+        f"{n_total - n_ok}",
+    )
+    st.markdown(
+        '<div style="height:0.35rem;"></div>',
+        unsafe_allow_html=True,
+    )
+
+    cards_html_parts: list[str] = []
+    for r in normalized:
+        rule_id = str(r.get("id") or "-")
+        desc = str(r.get("descripcion") or "")
+        expr = str(r.get("expresion") or "")
+        sev_label = str(r.get("severidad") or "")
+        badge = _rule_badge_html(r)
+        sev_tone = (
+            "color:#cbd5e1;"
+            if r.get("cumple") is True
+            else ("color:#fecaca;" if str(r.get("severidad") or "").lower() in {"critica", "critico"} else "color:#fde68a;")
+        )
+        expr_html = ""
+        if expr.strip():
+            expr_html = (
+                '<div style="margin-top:0.35rem;">'
+                '<div style="font-size:0.72rem;color:#64748b;margin-bottom:0.15rem;">Expresión AST</div>'
+                f'<code style="background:#020617;border:1px solid rgba(148,163,184,0.2);'
+                f'color:#e2e8f0;padding:0.2rem 0.35rem;border-radius:6px;font-size:0.78rem;">{expr}</code>'
+                "</div>"
+            )
+        cards_html_parts.append(
+            '<div style="background:#0f172a;border:1px solid rgba(148,163,184,0.2);'
+            'border-radius:14px;padding:0.75rem 0.9rem;margin-bottom:0.55rem;">'
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;">'
+            f'<div style="font-weight:700;color:#f8fafc;font-size:0.95rem;">{rule_id}</div>'
+            f"{badge}"
+            "</div>"
+            f'<div style="margin-top:0.35rem;color:#e2e8f0;font-size:0.9rem;line-height:1.45;">{desc}</div>'
+            f'<div style="margin-top:0.25rem;font-size:0.78rem;{sev_tone}">'
+            f'Severidad: <b>{sev_label or "—"}</b>'
+            "</div>"
+            f"{expr_html}"
+            "</div>"
+        )
+
+    st.markdown(
+        "".join(cards_html_parts),
+        unsafe_allow_html=True,
+    )
+
+
 def _rows_to_csv_bytes(*, rows: list[dict[str, Any]]) -> bytes:
     if not rows:
         return b""
@@ -1449,6 +1546,39 @@ if app_section == "Centro analítico":
 
 
 with st.sidebar:
+    # ===== Panel de estado entorno (defensa visual) =====
+    try:
+        import ollama as _ollama_probe  # type: ignore
+
+        _probe = _ollama_probe.list()
+        _models = _probe.get("models") or [] if isinstance(_probe, dict) else []
+        _ollama_status = "✅ Ollama · OK"
+        _ollama_note = f"{len(_models)} modelo(s) disponible(s) · fallback multimodal activo"
+    except Exception:
+        _ollama_status = "⚠️ Ollama · No detectado"
+        _ollama_note = "Se usará ruta PyPDF + EasyOCR sin VLM multimodal"
+
+    st.markdown(
+        f"""
+        <div class="da-panel" style="padding:0.7rem 0.85rem;">
+          <div class="da-section-title" style="font-size:0.95rem;">Entorno de ejecución</div>
+          <div style="margin-top:0.35rem;">
+            <div style="font-weight:600;color:#f8fafc;">{_ollama_status}</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;">{_ollama_note}</div>
+            <div style="color:#94a3b8;font-size:0.78rem;margin-top:0.25rem;">
+              UI: Streamlit · Pipeline: LangGraph (5 nodos)
+              <br/>
+              Esquemas: YAML · Validación: AST whitelist
+              <br/>
+              Todo en local · Sin dependencias cloud
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
     st.subheader("Ejecución")
     use_vision = st.checkbox("Si el PDF no tiene texto, intentar con OCR", value=True)
     schema_choice = st.selectbox(
@@ -1729,31 +1859,53 @@ if run_clicked:
         start_time = time.perf_counter()
         process = psutil.Process() if psutil is not None else None
         ram_start = process.memory_info().rss / (1024 * 1024) if process is not None else 0.0
-        
-        with st.spinner("Ejecutando pipeline (extracción → normalización → validación → auditoría)..."):
-            expediente_texts = st.session_state.get("expediente_texts")
-            uploaded_names = st.session_state.get("uploaded_names", [])
-            expediente_meta = st.session_state.get("expediente_meta", [])
-            
-            if isinstance(expediente_texts, list) and len(expediente_texts) >= 2:
-                pages_by_doc = st.session_state.get("expediente_pages")
-                doc_ids = st.session_state.get("expediente_doc_ids")
-                result = run_expediente(
-                    [str(t) for t in expediente_texts],
-                    pages_by_doc=pages_by_doc if isinstance(pages_by_doc, list) else None,
-                    doc_ids=doc_ids if isinstance(doc_ids, list) else None,
-                    schema_name=None if schema_choice == "Auto" else schema_choice,
-                )
-            else:
-                pages = st.session_state.get("input_pages")
-                doc_id = st.session_state.get("doc_id")
-                result = run_pipeline(
-                    text,
-                    pages=pages if isinstance(pages, list) else None,
-                    doc_id=doc_id if isinstance(doc_id, str) else None,
-                    schema_name=None if schema_choice == "Auto" else schema_choice,
-                )
-        
+
+        expediente_texts = st.session_state.get("expediente_texts")
+        uploaded_names = st.session_state.get("uploaded_names", [])
+        expediente_meta = st.session_state.get("expediente_meta", [])
+        is_expediente = isinstance(expediente_texts, list) and len(expediente_texts) >= 2
+        pipeline_label = (
+            f"Ejecutando pipeline DocAudit Agent (expediente {len(expediente_texts)} documentos)…"
+            if is_expediente
+            else "Ejecutando pipeline DocAudit Agent…"
+        )
+
+        with st.status(pipeline_label, expanded=True) as pipeline_status:
+            st.write("🔍 1/5 — Clasificación de dominio y selección de esquema YAML…")
+            st.write("📝 2/5 — Extracción estructurada de campos (PyPDF / EasyOCR / Qwen2.5-VL)…")
+            st.write("🧹 3/5 — Normalización de valores (fechas ISO, importes, DNI, enums…)…")
+            st.write("✅ 4/5 — Validación estructural y reglas declarativas AST…")
+            st.write("📊 5/5 — Auditoría final y cálculo score_confianza…")
+
+            with st.spinner(
+                "Procesando en local (5–30 s/documento según tipo). "
+                + "Paciencia: el fallback multimodal y OCR son costosos en CPU."
+            ):
+                if is_expediente:
+                    pages_by_doc = st.session_state.get("expediente_pages")
+                    doc_ids = st.session_state.get("expediente_doc_ids")
+                    result = run_expediente(
+                        [str(t) for t in expediente_texts],
+                        pages_by_doc=pages_by_doc if isinstance(pages_by_doc, list) else None,
+                        doc_ids=doc_ids if isinstance(doc_ids, list) else None,
+                        schema_name=None if schema_choice == "Auto" else schema_choice,
+                    )
+                else:
+                    pages = st.session_state.get("input_pages")
+                    doc_id = st.session_state.get("doc_id")
+                    result = run_pipeline(
+                        text,
+                        pages=pages if isinstance(pages, list) else None,
+                        doc_id=doc_id if isinstance(doc_id, str) else None,
+                        schema_name=None if schema_choice == "Auto" else schema_choice,
+                    )
+
+            pipeline_status.update(
+                label="✅ Pipeline completado — revisa las pestañas inferiores",
+                state="complete",
+                expanded=False,
+            )
+
         # Calcular tiempo y RAM final
         end_time = time.perf_counter()
         ram_end = process.memory_info().rss / (1024 * 1024) if process is not None else ram_start
@@ -2086,21 +2238,8 @@ if isinstance(result, dict) and result:
             _render_score_gauge(score=float(score), key="score_confianza_resumen")
 
         if isinstance(decision_rules, list) and decision_rules:
-            st.write("Reglas de decisión (resumen)")
-            st.dataframe(
-                [
-                    {
-                        "id": r.get("id"),
-                        "severidad": r.get("severidad"),
-                        "cumple": r.get("cumple"),
-                        "descripcion": r.get("descripcion"),
-                    }
-                    for r in decision_rules
-                    if isinstance(r, dict)
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.subheader("Reglas de decisión")
+            _render_decision_rules_cards(rules=decision_rules)
 
     with tab_extracted:
         schema_name = (result.get("schema") or {}).get("name") if isinstance(result.get("schema"), dict) else None
@@ -2151,22 +2290,8 @@ if isinstance(result, dict) and result:
 
         decision_rules = report_json.get("decision_rules", []) if isinstance(report_json, dict) else []
         if isinstance(decision_rules, list) and decision_rules:
-            st.write("Reglas evaluadas")
-            st.dataframe(
-                [
-                    {
-                        "id": r.get("id"),
-                        "severidad": r.get("severidad"),
-                        "cumple": r.get("cumple"),
-                        "descripcion": r.get("descripcion"),
-                        "expresion": r.get("expresion"),
-                    }
-                    for r in decision_rules
-                    if isinstance(r, dict)
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.subheader("Reglas evaluadas")
+            _render_decision_rules_cards(rules=decision_rules)
 
         campos = report_json.get("campos") if isinstance(report_json, dict) else None
         if isinstance(campos, dict) and campos:
