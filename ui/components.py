@@ -53,7 +53,7 @@ def find_ground_truth_for_pdf(*, pdf_filename: str, project_root: Path) -> Path 
             hits = list(data_root.rglob(gt_name))
             return hits[0] if hits else None
 
-    for candidate in (f"{stem}.json",):
+    for candidate in (f"{stem}.json", f"{stem}_ground_truth.json"):
         hits = list(data_root.rglob(candidate))
         if hits:
             return hits[0]
